@@ -1,0 +1,210 @@
+{
+  "name": "ai-code-review",
+  "displayName": "AI Code Review",
+  "description": "An AI-powered extension for Git commit code review",
+  "version": "0.1.0",
+  "publisher": "nesnilnehc",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nesnilnehc/ai-code-review"
+  },
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.63.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "SCM Providers",
+    "Other"
+  ],
+  "keywords": [
+    "code review",
+    "ai",
+    "git",
+    "deepseek",
+    "code quality"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:ai-code-review.startReview",
+    "onCommand:ai-code-review.configureApiKey",
+    "onView:commitExplorer",
+    "onView:fileExplorer"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "AI Code Review",
+      "properties": {
+        "ai-code-review.deepseekApiKey": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "API key for DeepSeek R1 AI service."
+        },
+        "ai-code-review.selectedModel": {
+          "type": "string",
+          "default": "deepseek-r1",
+          "enum": [
+            "deepseek-r1"
+          ],
+          "enumDescriptions": [
+            "DeepSeek R1 AI model for code review"
+          ],
+          "markdownDescription": "AI model used for code review."
+        },
+        "ai-code-review.language": {
+          "type": "string",
+          "default": "zh",
+          "enum": [
+            "zh",
+            "en"
+          ],
+          "enumDescriptions": [
+            "中文",
+            "English"
+          ],
+          "markdownDescription": "Language for code review results."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "ai-code-review.configureApiKey",
+        "title": "Configure DeepSeek API Key"
+      },
+      {
+        "command": "ai-code-review.startReview",
+        "title": "Start Code Review"
+      },
+      {
+        "command": "ai-code-review.debugGit",
+        "title": "Debug Git Functionality"
+      },
+      {
+        "command": "ai-code-review.refreshCommits",
+        "title": "Refresh Commits",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "ai-code-review.refreshFiles",
+        "title": "Refresh Files",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "ai-code-review.filterByDateRange",
+        "title": "Filter by Date Range"
+      },
+      {
+        "command": "ai-code-review.filterByCommitId",
+        "title": "Filter by Commit ID"
+      },
+      {
+        "command": "ai-code-review.filterByBranch",
+        "title": "Filter by Branch"
+      },
+      {
+        "command": "ai-code-review.generateReport",
+        "title": "Generate Code Review Report",
+        "icon": "$(notebook-render-output)"
+      },
+      {
+        "command": "ai-code-review.reviewCode",
+        "title": "Review Code Changes"
+      },
+      {
+        "command": "ai-code-review.selectModel",
+        "title": "Select AI Model for Code Review"
+      },
+      {
+        "command": "ai-code-review.selectCommit",
+        "title": "Select Commit for Review"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "code-review-explorer",
+          "title": "Code Review",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "code-review-explorer": [
+        {
+          "id": "commitExplorer",
+          "name": "Commits"
+        },
+        {
+          "id": "fileExplorer",
+          "name": "Changed Files"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "ai-code-review.refreshCommits",
+          "when": "view == commitExplorer",
+          "group": "navigation"
+        },
+        {
+          "command": "ai-code-review.refreshFiles",
+          "when": "view == fileExplorer",
+          "group": "navigation"
+        },
+        {
+          "command": "ai-code-review.generateReport",
+          "when": "view == commitExplorer",
+          "group": "navigation@1"
+        },
+        {
+          "command": "ai-code-review.filterByDateRange",
+          "when": "view == commitExplorer",
+          "group": "1_filtering"
+        },
+        {
+          "command": "ai-code-review.filterByCommitId",
+          "when": "view == commitExplorer",
+          "group": "1_filtering"
+        },
+        {
+          "command": "ai-code-review.filterByBranch",
+          "when": "view == commitExplorer",
+          "group": "1_filtering"
+        },
+        {
+          "command": "ai-code-review.selectModel",
+          "when": "view == commitExplorer",
+          "group": "2_settings"
+        }
+      ],
+      "view/item/context": []
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "webpack",
+    "watch": "webpack --watch",
+    "package": "webpack --mode production --devtool hidden-source-map",
+    "lint": "eslint src --ext ts",
+    "package-extension": "npx vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^16.11.7",
+    "@types/vscode": "^1.63.0",
+    "@typescript-eslint/eslint-plugin": "^5.30.0",
+    "@typescript-eslint/parser": "^5.30.0",
+    "@vscode/vsce": "^3.2.2",
+    "eslint": "^8.18.0",
+    "ts-loader": "^9.3.1",
+    "typescript": "^4.7.4",
+    "webpack": "^5.73.0",
+    "webpack-cli": "^4.10.0"
+  },
+  "dependencies": {
+    "axios": "^1.8.1",
+    "openai": "^4.85.4",
+    "simple-git": "^3.16.0"
+  }
+}

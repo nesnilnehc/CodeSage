@@ -1,0 +1,17 @@
+.vscode/**
+.vscode-test/**
+src/**
+.gitignore
+.yarnrc
+webpack.config.js
+vsc-extension-quickstart.md
+**/tsconfig.json
+**/.eslintrc.json
+**/*.map
+**/*.ts
+.github/**
+.git/**
+node_modules/**
+!node_modules/axios/**
+!node_modules/openai/**
+!node_modules/simple-git/**
