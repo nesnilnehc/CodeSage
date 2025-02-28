@@ -39,7 +39,7 @@
         "codesage.deepseekApiKey": {
           "type": "string",
           "default": "",
-          "markdownDescription": "API key for DeepSeek R1 AI service."
+          "markdownDescription": "API key for DeepSeek service."
         },
         "codesage.selectedModel": {
           "type": "string",
@@ -118,6 +118,10 @@
       {
         "command": "codesage.selectCommit",
         "title": "Select Commit for Review"
+      },
+      {
+        "command": "codesage.viewFile",
+        "title": "View File Content"
       }
     ],
     "viewsContainers": {

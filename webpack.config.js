@@ -16,11 +16,7 @@ module.exports = {
     minimize: true
   },
   externals: {
-    vscode: 'commonjs vscode',
-    // 不打包这些依赖，它们会在运行时从 node_modules 加载
-    'axios': 'commonjs axios',
-    'openai': 'commonjs openai',
-    'simple-git': 'commonjs simple-git'
+    vscode: 'commonjs vscode' // 只保留 vscode 作为 external
   },
   performance: {
     hints: false

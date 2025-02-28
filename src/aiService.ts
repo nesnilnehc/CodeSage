@@ -181,9 +181,20 @@ ${params.currentContent}`;
                 score
             };
         } catch (error) {
-            console.error('Error reviewing code:', error);
+            const errorDetails = error instanceof Error ? error.stack || error.message : String(error);
+            console.error('[CodeSage] Code review error details:', {
+                error: errorDetails,
+                request: {
+                    filePath: params.filePath,
+                    language: this.detectLanguage(params.filePath),
+                    modelUsed: this.selectedModel,
+                    apiKeyConfigured: !!this.apiKey,
+                    clientInitialized: !!this.client
+                }
+            });
+            
             return {
-                suggestions: ['Error: Unable to complete code review.'],
+                suggestions: [`Error: Unable to complete code review. Details: ${errorDetails}`],
                 score: undefined
             };
         }

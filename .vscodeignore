@@ -1,3 +1,4 @@
+# Development files
 .vscode/**
 .vscode-test/**
 src/**
@@ -9,9 +10,27 @@ vsc-extension-quickstart.md
 **/.eslintrc.json
 **/*.map
 **/*.ts
+
+# Git related
 .github/**
 .git/**
+
+# Dependencies
 node_modules/**
-!node_modules/axios/**
-!node_modules/openai/**
-!node_modules/simple-git/**
+
+# Build output
+out/**
+
+# Test files
+test/**
+
+# Configuration files
+.eslintrc.json
+.prettierrc
+.markdownlint.yaml
+
+# Backup files
+**/*.bak
+
+# Development documentation
+docs/development/**
