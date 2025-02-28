@@ -1,12 +1,12 @@
 {
-  "name": "ai-code-review",
-  "displayName": "AI Code Review",
+  "name": "codesage",
+  "displayName": "CodeSage",
   "description": "An AI-powered extension for Git commit code review",
   "version": "0.1.0",
   "publisher": "nesnilnehc",
   "repository": {
     "type": "git",
-    "url": "https://github.com/nesnilnehc/ai-code-review"
+    "url": "https://github.com/nesnilnehc/CodeSage"
   },
   "license": "MIT",
   "engines": {
@@ -26,8 +26,8 @@
   ],
   "activationEvents": [
     "onStartupFinished",
-    "onCommand:ai-code-review.startReview",
-    "onCommand:ai-code-review.configureApiKey",
+    "onCommand:codesage.startReview",
+    "onCommand:codesage.configureApiKey",
     "onView:commitExplorer",
     "onView:fileExplorer"
   ],
@@ -36,12 +36,12 @@
     "configuration": {
       "title": "AI Code Review",
       "properties": {
-        "ai-code-review.deepseekApiKey": {
+        "codesage.deepseekApiKey": {
           "type": "string",
           "default": "",
           "markdownDescription": "API key for DeepSeek R1 AI service."
         },
-        "ai-code-review.selectedModel": {
+        "codesage.selectedModel": {
           "type": "string",
           "default": "deepseek-r1",
           "enum": [
@@ -52,7 +52,7 @@
           ],
           "markdownDescription": "AI model used for code review."
         },
-        "ai-code-review.language": {
+        "codesage.language": {
           "type": "string",
           "default": "zh",
           "enum": [
@@ -69,54 +69,54 @@
     },
     "commands": [
       {
-        "command": "ai-code-review.configureApiKey",
+        "command": "codesage.configureApiKey",
         "title": "Configure DeepSeek API Key"
       },
       {
-        "command": "ai-code-review.startReview",
+        "command": "codesage.startReview",
         "title": "Start Code Review"
       },
       {
-        "command": "ai-code-review.debugGit",
+        "command": "codesage.debugGit",
         "title": "Debug Git Functionality"
       },
       {
-        "command": "ai-code-review.refreshCommits",
+        "command": "codesage.refreshCommits",
         "title": "Refresh Commits",
         "icon": "$(refresh)"
       },
       {
-        "command": "ai-code-review.refreshFiles",
+        "command": "codesage.refreshFiles",
         "title": "Refresh Files",
         "icon": "$(refresh)"
       },
       {
-        "command": "ai-code-review.filterByDateRange",
+        "command": "codesage.filterByDateRange",
         "title": "Filter by Date Range"
       },
       {
-        "command": "ai-code-review.filterByCommitId",
+        "command": "codesage.filterByCommitId",
         "title": "Filter by Commit ID"
       },
       {
-        "command": "ai-code-review.filterByBranch",
+        "command": "codesage.filterByBranch",
         "title": "Filter by Branch"
       },
       {
-        "command": "ai-code-review.generateReport",
+        "command": "codesage.generateReport",
         "title": "Generate Code Review Report",
         "icon": "$(notebook-render-output)"
       },
       {
-        "command": "ai-code-review.reviewCode",
+        "command": "codesage.reviewCode",
         "title": "Review Code Changes"
       },
       {
-        "command": "ai-code-review.selectModel",
+        "command": "codesage.selectModel",
         "title": "Select AI Model for Code Review"
       },
       {
-        "command": "ai-code-review.selectCommit",
+        "command": "codesage.selectCommit",
         "title": "Select Commit for Review"
       }
     ],
@@ -144,37 +144,37 @@
     "menus": {
       "view/title": [
         {
-          "command": "ai-code-review.refreshCommits",
+          "command": "codesage.refreshCommits",
           "when": "view == commitExplorer",
           "group": "navigation"
         },
         {
-          "command": "ai-code-review.refreshFiles",
+          "command": "codesage.refreshFiles",
           "when": "view == fileExplorer",
           "group": "navigation"
         },
         {
-          "command": "ai-code-review.generateReport",
+          "command": "codesage.generateReport",
           "when": "view == commitExplorer",
           "group": "navigation@1"
         },
         {
-          "command": "ai-code-review.filterByDateRange",
+          "command": "codesage.filterByDateRange",
           "when": "view == commitExplorer",
           "group": "1_filtering"
         },
         {
-          "command": "ai-code-review.filterByCommitId",
+          "command": "codesage.filterByCommitId",
           "when": "view == commitExplorer",
           "group": "1_filtering"
         },
         {
-          "command": "ai-code-review.filterByBranch",
+          "command": "codesage.filterByBranch",
           "when": "view == commitExplorer",
           "group": "1_filtering"
         },
         {
-          "command": "ai-code-review.selectModel",
+          "command": "codesage.selectModel",
           "when": "view == commitExplorer",
           "group": "2_settings"
         }

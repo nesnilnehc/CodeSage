@@ -17,7 +17,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     // 检查 API key 是否已配置
     const aiService = AIService.getInstance();
-    const apiKey = vscode.workspace.getConfiguration('ai-code-review').get('deepseekApiKey');
+    const apiKey = vscode.workspace.getConfiguration('codesage').get('deepseekApiKey');
         if (!apiKey) {
             const configureNow = 'Configure API Key';
             const openSettings = 'Open Settings';
@@ -42,7 +42,7 @@ export function activate(context: vscode.ExtensionContext) {
                         }
                     });
                 } else if (selection === openSettings) {
-                    vscode.commands.executeCommand('workbench.action.openSettings', 'ai-code-review.deepseekApiKey');
+                    vscode.commands.executeCommand('workbench.action.openSettings', 'codesage.deepseekApiKey');
                 }
             });
         }
@@ -62,7 +62,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Register commands
     context.subscriptions.push(
-        vscode.commands.registerCommand('ai-code-review.configureApiKey', async () => {
+        vscode.commands.registerCommand('codesage.configureApiKey', async () => {
             const aiService = AIService.getInstance();
             const apiKey = await vscode.window.showInputBox({
                 prompt: 'Enter your DeepSeek API key',
@@ -79,7 +79,7 @@ export function activate(context: vscode.ExtensionContext) {
                 }
             }
         }),
-        vscode.commands.registerCommand('ai-code-review.startReview', async () => {
+        vscode.commands.registerCommand('codesage.startReview', async () => {
             try {
                 const workspaceFolders = vscode.workspace.workspaceFolders;
                 if (!workspaceFolders) {
@@ -111,7 +111,7 @@ export function activate(context: vscode.ExtensionContext) {
             }
         }),
         
-        vscode.commands.registerCommand('ai-code-review.reviewCode', async (params: { filePath: string, currentContent: string, previousContent: string }) => {
+        vscode.commands.registerCommand('codesage.reviewCode', async (params: { filePath: string, currentContent: string, previousContent: string }) => {
             try {
                 console.log(`Reviewing code for ${params.filePath}`);
                 
@@ -147,7 +147,7 @@ export function activate(context: vscode.ExtensionContext) {
                                 aiService.setApiKey(apiKey);
                                 vscode.window.showInformationMessage('DeepSeek API key configured successfully!');
                                 // Retry the review
-                                return await vscode.commands.executeCommand('ai-code-review.reviewCode', params);
+                                return await vscode.commands.executeCommand('codesage.reviewCode', params);
                             } else {
                                 vscode.window.showErrorMessage('Invalid DeepSeek API key. Please check your key and try again.');
                             }
@@ -162,7 +162,7 @@ export function activate(context: vscode.ExtensionContext) {
             }
         }),
         
-        vscode.commands.registerCommand('ai-code-review.generateReport', async () => {
+        vscode.commands.registerCommand('codesage.generateReport', async () => {
             try {
                 const selectedCommit = reviewManager.getSelectedCommit();
                 if (!selectedCommit) {
@@ -189,7 +189,7 @@ export function activate(context: vscode.ExtensionContext) {
             }
         }),
 
-        vscode.commands.registerCommand('ai-code-review.reviewFile', async (filePath: string) => {
+        vscode.commands.registerCommand('codesage.reviewFile', async (filePath: string) => {
             try {
                 await ReviewPanel.createOrShow(context.extensionUri, reviewManager, filePath);
             } catch (error) {
@@ -198,27 +198,27 @@ export function activate(context: vscode.ExtensionContext) {
             }
         }),
         
-        vscode.commands.registerCommand('ai-code-review.filterByDateRange', async () => {
+        vscode.commands.registerCommand('codesage.filterByDateRange', async () => {
             await filterByDateRange(gitService, commitExplorerProvider);
         }),
         
-        vscode.commands.registerCommand('ai-code-review.filterByCommitId', async () => {
+        vscode.commands.registerCommand('codesage.filterByCommitId', async () => {
             await filterByCommitId(gitService, commitExplorerProvider);
         }),
         
-        vscode.commands.registerCommand('ai-code-review.filterByBranch', async () => {
+        vscode.commands.registerCommand('codesage.filterByBranch', async () => {
             await filterByBranch(gitService, commitExplorerProvider);
         }),
         
-        vscode.commands.registerCommand('ai-code-review.selectModel', async () => {
+        vscode.commands.registerCommand('codesage.selectModel', async () => {
             await selectModel(context);
         }),
         
-        vscode.commands.registerCommand('ai-code-review.debugGit', async () => {
+        vscode.commands.registerCommand('codesage.debugGit', async () => {
             await debugGitFunctionality(gitService);
         }),
         
-        vscode.commands.registerCommand('ai-code-review.refreshCommits', async () => {
+        vscode.commands.registerCommand('codesage.refreshCommits', async () => {
             try {
                 console.log('Refreshing commits...');
                 commitExplorerProvider.setLoading(true, 'Refreshing commits...');
@@ -248,7 +248,7 @@ export function activate(context: vscode.ExtensionContext) {
             }
         }),
         
-        vscode.commands.registerCommand('ai-code-review.refreshFiles', async () => {
+        vscode.commands.registerCommand('codesage.refreshFiles', async () => {
             try {
                 console.log('Refreshing files...');
                 // 刷新文件列表
@@ -260,7 +260,7 @@ export function activate(context: vscode.ExtensionContext) {
             }
         }),
 
-        vscode.commands.registerCommand('ai-code-review.selectCommit', async (commitHash: string) => {
+        vscode.commands.registerCommand('codesage.selectCommit', async (commitHash: string) => {
             try {
                 console.log(`Selecting commit: ${commitHash}`);
                 // 获取完整的提交信息

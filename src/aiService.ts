@@ -31,7 +31,7 @@ export class AIService {
 
     private constructor() {
         // 获取配置
-        const config = vscode.workspace.getConfiguration('ai-code-review');
+        const config = vscode.workspace.getConfiguration('codesage');
         this.apiKey = config.get('deepseekApiKey');
         this.selectedModel = config.get('selectedModel') || 'deepseek-r1';
         this.language = config.get('language') || 'zh';
@@ -221,7 +221,7 @@ ${params.currentContent}`;
     public setApiKey(apiKey: string): void {
         this.apiKey = apiKey;
         // Save to configuration
-        vscode.workspace.getConfiguration('ai-code-review').update('deepseekApiKey', apiKey, true);
+        vscode.workspace.getConfiguration('codesage').update('deepseekApiKey', apiKey, true);
         // Initialize OpenAI client
         this.client = new OpenAI({
             baseURL: 'https://api.deepseek.com',

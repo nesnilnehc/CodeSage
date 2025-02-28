@@ -41,12 +41,12 @@ export class ReviewManager {
     }
 
     private logError(error: Error, context: string): void {
-        console.error(`[AI Code Review] ${context}:`, error);
-        vscode.window.showErrorMessage(`AI 代码审查错误: ${error.message}`);
+        console.error(`[CodeSage] ${context}:`, error);
+        vscode.window.showErrorMessage(`CodeSage Error: ${error.message}`);
     }
 
     private logInfo(message: string): void {
-        console.log(`[AI Code Review] ${message}`);
+        console.log(`[CodeSage] ${message}`);
         vscode.window.showInformationMessage(message);
     }
 
@@ -196,7 +196,7 @@ export class ReviewManager {
             const review = await this.reviewFile(filePath);
             review.aiSuggestions.push(suggestion);
             this.logInfo(`Added AI suggestion to file ${filePath}`);
-            vscode.window.showInformationMessage(`已添加 AI 建议到文件: ${filePath}`);
+            vscode.window.showInformationMessage(`Added AI suggestion to file: ${filePath}`);
         } catch (error) {
             this.logError(error as Error, 'Failed to add AI suggestion');
             throw error;
@@ -215,7 +215,7 @@ export class ReviewManager {
             const review = await this.reviewFile(filePath);
             review.codeQualityScore = score;
             this.logInfo(`Set code quality score for file ${filePath}: ${score}`);
-            vscode.window.showInformationMessage(`已设置代码质量分数: ${filePath} (${score}/100)`);
+            vscode.window.showInformationMessage(`Set code quality score for file: ${filePath} (${score}/100)`);
         } catch (error) {
             this.logError(error as Error, 'Failed to set code quality score');
             throw error;
@@ -223,156 +223,156 @@ export class ReviewManager {
     }
 
     public async generateReport(): Promise<string> {
-        // 获取通知管理器实例
+        // Get notification manager instance
         const notificationManager = NotificationManager.getInstance();
         notificationManager.startSession(true);
         
         try {
-            // 检查是否选择了提交
+            // Check if a commit is selected
             if (!this.selectedCommit) {
-                notificationManager.log('未选择提交', 'error', true);
-                throw new Error('未选择提交');
+                notificationManager.log('No commit selected', 'error', true);
+                throw new Error('No commit selected');
             }
             
-            notificationManager.log(`开始生成代码审查报告...`, 'info', true);
-            notificationManager.log(`选中的提交: ${this.selectedCommit.hash} (${this.selectedCommit.message})`, 'info', false);
+            notificationManager.log(`Starting code review report generation...`, 'info', true);
+            notificationManager.log(`Selected commit: ${this.selectedCommit.hash} (${this.selectedCommit.message})`, 'info', false);
             
             let reportContent = '';
             const { AIService } = await import('./aiService');
             const aiService = AIService.getInstance();
             
-            // 定义在外部作用域，使其在整个函数中可用
+            // Define in outer scope to make it available throughout the function
             let totalFiles = 0;
             
-            // 使用窗口进度条
+            // Use window progress bar
             await vscode.window.withProgress({
                 location: vscode.ProgressLocation.Window,
-                title: '正在生成代码审查报告',
-                cancellable: true
+                title: 'Generating code review report',
+                cancellable: false
             }, async (progress) => {
-                // 步骤 1：收集提交信息 (5%)
-                const step1Message = '步骤 1/4: 收集提交信息';
-                progress.report({ increment: 5, message: step1Message });
-                notificationManager.updateStatusBar(step1Message);
-                notificationManager.log('正在收集提交信息...', 'info', true);
-                await new Promise(resolve => setTimeout(resolve, 1000));
+                // Step 1: Collect commit information (5%)
+                const step1Message = 'Step 1/4: Collecting commit information';
+                progress.report({ message: step1Message, increment: 5 });
+                notificationManager.log('Collecting commit information...', 'info', true);
                 
-                // 生成报告基本结构
-                reportContent = `# 代码审查报告\n\n`;
-                reportContent += `## 提交信息\n`;
                 const commit = this.selectedCommit!;
-                reportContent += `- 提交哈希: ${commit.hash}\n`;
-                reportContent += `- 作者: ${commit.author} <${commit.authorEmail}>\n`;
-                reportContent += `- 日期: ${commit.date}\n`;
-                reportContent += `- 提交信息: ${commit.message}\n\n`;
                 
-                notificationManager.log('提交信息收集完成', 'info', true);
+                // Generate basic report structure
+                reportContent = `# Code Review Report\n\n`;
+                reportContent += `## Commit Information\n`;
+                reportContent += `\n`;
+                reportContent += `- Commit Hash: ${commit.hash}\n`;
+                reportContent += `- Author: ${commit.author} <${commit.authorEmail}>\n`;
+                reportContent += `- Date: ${commit.date}\n`;
+                reportContent += `- Commit Message: ${commit.message}\n\n`;
                 
-                // 步骤 2：获取文件变更 (15%)
-                const step2Message = '步骤 2/4: 获取文件变更';
-                progress.report({ increment: 15, message: step2Message });
-                notificationManager.updateStatusBar(step2Message, '正在获取文件变更...');
+                notificationManager.log('Commit information collection completed', 'info', true);
                 
-                // 从 git 获取文件
-                notificationManager.log('正在从 Git 获取文件变更...', 'info', true);
+                // Step 2: Get file changes (15%)
+                const step2Message = 'Step 2/4: Getting file changes';
+                progress.report({ message: step2Message, increment: 15 });
+                notificationManager.updateStatusBar(step2Message, 'Getting file changes...');
+                
+                // Get files from git
+                notificationManager.log('Getting file changes from Git...', 'info', true);
                 const files = await this.gitService.getCommitFiles(this.selectedCommit!.hash);
                 totalFiles = files.length;
                 
                 if (totalFiles === 0) {
-                    notificationManager.log('没有找到任何文件变更', 'warning', true);
-                    throw new Error('没有找到任何文件变更');
+                    notificationManager.log('No file changes found', 'warning', true);
+                    throw new Error('No file changes found');
                 }
                 
-                notificationManager.log(`找到 ${totalFiles} 个文件需要审查`, 'info', true);
-                notificationManager.updateStatusBar(step2Message, `找到 ${totalFiles} 个文件变更`);
+                notificationManager.log(`Found ${totalFiles} files to review`, 'info', true);
+                notificationManager.updateStatusBar(step2Message, `Found ${totalFiles} file changes`);
                 await new Promise(resolve => setTimeout(resolve, 1000));
                 
-                // 步骤 3：AI 代码审查 (60%)
-                reportContent += `## 文件审查\n\n`;
-                const incrementPerFile = 60 / totalFiles; // 60% 的进度分配给文件审查
+                // Step 3: AI code review (60%)
+                reportContent += `## File Review\n\n`;
+                const incrementPerFile = 60 / totalFiles; // 60% progress allocated to file review
                 let fileCount = 0;
                 
                 for (const file of files) {
                     fileCount++;
                     const fileProgress = `(${fileCount}/${totalFiles})`;
-                    const fileMessage = `步骤 3/4: 正在审查文件 ${fileProgress}`;
+                    const fileMessage = `Step 3/4: Reviewing file ${fileProgress}`;
                     
                     progress.report({
-                        increment: incrementPerFile,
-                        message: fileMessage
+                        message: fileMessage,
+                        increment: incrementPerFile
                     });
                     
-                    notificationManager.updateStatusBar(fileMessage, `文件: ${file.path}`);
-                    notificationManager.log(`开始审查文件 ${fileProgress}: ${file.path}`, 'info', true);
+                    notificationManager.updateStatusBar(fileMessage, `File: ${file.path}`);
+                    notificationManager.log(`Reviewing file ${fileProgress}: ${file.path}`, 'info', true);
                     reportContent += `### ${file.path}\n\n`;
                     
                     try {
-                        // 调用 AI 服务进行代码审查
-                        notificationManager.log(`正在分析文件内容...`, 'info', false);
+                        // Call AI service for code review
+                        notificationManager.log(`Analyzing file content...`, 'info', false);
                         const review = await aiService.reviewCode({
                             filePath: file.path,
                             currentContent: file.content || '',
                             previousContent: file.previousContent || ''
                         });
                         
-                        // 存储和显示审查结果
-                        notificationManager.log(`AI 分析完成，正在处理建议...`, 'info', false);
+                        // Store and display review results
+                        notificationManager.log(`AI analysis completed, processing suggestions...`, 'info', false);
                         await this.addAISuggestion(file.path, review.suggestions.join('\n'));
                         
-                        reportContent += `#### AI 审查建议\n`;
+                        reportContent += `#### AI Review Suggestions\n`;
                         for (const suggestion of review.suggestions) {
                             reportContent += `- ${suggestion}\n`;
                         }
                         
                         if (review.score !== undefined) {
                             await this.setCodeQualityScore(file.path, review.score);
-                            reportContent += `\n代码质量评分: ${review.score}/100\n`;
-                            notificationManager.log(`文件 ${file.path} 的代码质量评分: ${review.score}/100`, 'info', true);
-                            notificationManager.updateStatusBar(fileMessage, `文件: ${file.path} (评分: ${review.score}/100)`);
+                            reportContent += `\nCode Quality Score: ${review.score}/100\n`;
+                            notificationManager.log(`File ${file.path} code quality score: ${review.score}/100`, 'info', true);
+                            notificationManager.updateStatusBar(fileMessage, `File: ${file.path} (Score: ${review.score}/100)`);
                         }
                         
                         reportContent += '\n---\n\n';
-                        notificationManager.log(`文件 ${file.path} 审查完成`, 'info', true);
+                        notificationManager.log(`File ${file.path} review completed`, 'info', true);
                     } catch (error) {
-                        const errorMessage = `审查文件 ${file.path} 时出错: ${error}`;
+                        const errorMessage = `Error reviewing file ${file.path}: ${error}`;
                         notificationManager.log(errorMessage, 'error', true);
                         this.logError(error as Error, errorMessage);
                         reportContent += `⚠️ ${errorMessage}\n\n`;
-                        notificationManager.updateStatusBar(fileMessage, `错误: ${errorMessage}`);
+                        notificationManager.updateStatusBar(fileMessage, `Error: ${errorMessage}`);
                     }
                     
-                    // 在每个文件之间添加延迟
+                    // Add delay between each file
                     await new Promise(resolve => setTimeout(resolve, 1000));
                 }
                 
-                // 步骤 4：完成报告 (20%)
-                const step4Message = '步骤 4/4: 正在完成报告';
-                progress.report({ increment: 20, message: step4Message });
-                notificationManager.updateStatusBar(step4Message, '正在生成报告总结...');
-                notificationManager.log('正在生成审查报告总结...', 'info', true);
+                // Step 4: Complete report (20%)
+                const step4Message = 'Step 4/4: Completing report';
+                progress.report({ message: step4Message, increment: 20 });
+                notificationManager.updateStatusBar(step4Message, 'Completing report summary...');
+                notificationManager.log('Completing report summary...', 'info', true);
                 
-                // 添加总结
-                reportContent += `## 总结\n\n`;
-                reportContent += `- 审查的文件总数: ${totalFiles}\n`;
-                reportContent += `- 完成时间: ${new Date().toLocaleString()}\n\n`;
+                // Add summary
+                reportContent += `## Summary\n\n`;
+                reportContent += `- Total files reviewed: ${totalFiles}\n`;
+                reportContent += `- Completion time: ${new Date().toLocaleString()}\n\n`;
                 
                 await new Promise(resolve => setTimeout(resolve, 1000));
-                notificationManager.log('报告总结生成完成', 'info', true);
+                notificationManager.log('Report summary completed', 'info', true);
             });
             
-            // 完成
-            notificationManager.complete('AI 代码审查完成');
-            notificationManager.showPersistentNotification(`总共审查了 ${totalFiles} 个文件`, 'info');
-            notificationManager.showPersistentNotification('报告已生成，可以在编辑器中查看详细内容', 'info');
+            // Complete
+            notificationManager.complete('AI code review completed');
+            notificationManager.showPersistentNotification(`Reviewed ${totalFiles} files`, 'info');
+            notificationManager.showPersistentNotification('Report generated, view detailed content in editor', 'info');
             
             return reportContent;
         } catch (error) {
-            const errorMessage = `生成代码审查报告时出错: ${error}`;
+            const errorMessage = `Error generating code review report: ${error}`;
             notificationManager.error(errorMessage);
             this.logError(error as Error, errorMessage);
             throw error;
         } finally {
-            // 延迟 5 秒再隐藏状态栏
+            // Delay 5 seconds before hiding status bar
             notificationManager.endSession(5000);
         }
     }

@@ -146,7 +146,7 @@ export class CommitTreeItem extends vscode.TreeItem {
         
         // Set the command that will be executed when the tree item is clicked
         this.command = {
-            command: 'ai-code-review.selectCommit',
+            command: 'codesage.selectCommit',
             title: 'Select Commit',
             arguments: [commit.hash]
         };

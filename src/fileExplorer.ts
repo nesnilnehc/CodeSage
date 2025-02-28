@@ -68,7 +68,7 @@ export class FileTreeItem extends vscode.TreeItem {
         this.contextValue = 'file';
         
         this.command = {
-            command: 'ai-code-review.viewFile',
+            command: 'codesage.viewFile',
             title: 'View File',
             arguments: [filePath]
         };

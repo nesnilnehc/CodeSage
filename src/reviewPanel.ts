@@ -84,7 +84,7 @@ export class ReviewPanel {
 
         // Otherwise, create a new panel.
         const panel = vscode.window.createWebviewPanel(
-            'ai-code-review',
+            'codesage',
             'Code Review',
             column || vscode.ViewColumn.One,
             {

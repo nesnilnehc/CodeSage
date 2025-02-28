@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 
 /**
- * 通知管理器 - 用于管理VS Code中的通知、状态栏和输出面板
+ * Notification Manager - Manages notifications, status bar, and output panel in VS Code
  */
 export class NotificationManager {
     private static instance: NotificationManager;
@@ -10,12 +10,12 @@ export class NotificationManager {
     private showNotifications: boolean = true;
 
     private constructor() {
-        this.outputChannel = vscode.window.createOutputChannel('AI 代码审查');
+        this.outputChannel = vscode.window.createOutputChannel('CodeSage');
         this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
     }
 
     /**
-     * 获取通知管理器实例
+     * Get notification manager instance
      */
     public static getInstance(): NotificationManager {
         if (!NotificationManager.instance) {
@@ -25,9 +25,10 @@ export class NotificationManager {
     }
 
     /**
-     * 开始新的会话
+     * Start a new session
      */
     public startSession(showOutputChannel: boolean = true): void {
+        this.showNotifications = true;
         this.outputChannel.clear();
         if (showOutputChannel) {
             this.outputChannel.show(true);
@@ -36,106 +37,107 @@ export class NotificationManager {
     }
 
     /**
-     * 结束会话
+     * End current session
      */
     public endSession(delay: number = 5000): void {
+        this.showNotifications = false;
         setTimeout(() => {
+            this.outputChannel.clear();
             this.statusBarItem.hide();
         }, delay);
     }
 
     /**
-     * 设置是否显示通知
+     * Set whether to show notifications
      */
     public setShowNotifications(show: boolean): void {
         this.showNotifications = show;
     }
 
     /**
-     * 记录信息
-     * @param message 消息内容
-     * @param level 消息级别
-     * @param showNotification 是否显示通知
+     * Log message
+     * @param message Message content
+     * @param level Message level
+     * @param showNotification Whether to show notification
      */
     public log(message: string, level: 'info' | 'warning' | 'error' = 'info', showNotification: boolean = false): void {
         const timestamp = new Date().toLocaleTimeString();
         const prefix = level === 'error' ? '❌' : level === 'warning' ? '⚠️' : '✨';
         this.outputChannel.appendLine(`[${timestamp}] ${prefix} ${message}`);
-        
-        if (this.showNotifications && showNotification) {
-            const options: vscode.MessageOptions = { modal: false };
-            
-            if (level === 'error') {
-                vscode.window.showErrorMessage(message, options);
-            } else if (level === 'warning') {
-                vscode.window.showWarningMessage(message, options);
-            } else {
-                vscode.window.showInformationMessage(message, { modal: false });
+        if (showNotification && this.showNotifications) {
+            switch (level) {
+                case 'info':
+                    vscode.window.showInformationMessage(message);
+                    break;
+                case 'warning':
+                    vscode.window.showWarningMessage(message);
+                    break;
+                case 'error':
+                    vscode.window.showErrorMessage(message);
+                    break;
             }
         }
     }
 
     /**
-     * 更新状态栏
-     * @param message 状态栏消息
-     * @param tooltip 悬停提示
-     * @param icon 图标
+     * Update status bar
+     * @param message Status bar message
+     * @param tooltip Tooltip text
+     * @param icon Icon name
      */
     public updateStatusBar(message: string, tooltip?: string, icon: string = 'sync~spin'): void {
-        this.statusBarItem.text = `$(${icon}) ${message}`;
-        this.statusBarItem.tooltip = tooltip || message;
+        this.statusBarItem.text = icon ? `$(${icon}) ${message}` : message;
+        if (tooltip) {
+            this.statusBarItem.tooltip = tooltip;
+        }
+        this.statusBarItem.show();
     }
 
     /**
-     * 完成状态
-     * @param message 完成消息
+     * Complete status
+     * @param message Completion message
      */
-    public complete(message: string = 'AI 代码审查完成'): void {
+    public complete(message: string = 'Code review completed'): void {
         this.statusBarItem.text = `$(check) ${message}`;
-        
-        // 使用更明显的通知
-        const options: vscode.MessageOptions = { modal: false };
-        vscode.window.showInformationMessage(`🎉 ${message}`, options);
-        
+        // Use more prominent notification
+        vscode.window.showInformationMessage(`🎉 ${message}`);
         this.log(`🎉 ${message}`, 'info', false);
     }
 
     /**
-     * 错误状态
-     * @param message 错误消息
+     * Error status
+     * @param message Error message
      */
     public error(message: string): void {
-        this.statusBarItem.text = `$(error) 错误`;
+        this.statusBarItem.text = `$(error) Error`;
         this.log(message, 'error', true);
     }
 
     /**
-     * 获取输出通道
+     * Get output channel
      */
     public getOutputChannel(): vscode.OutputChannel {
         return this.outputChannel;
     }
 
     /**
-     * 获取状态栏项
+     * Get status bar item
      */
     public getStatusBarItem(): vscode.StatusBarItem {
         return this.statusBarItem;
     }
 
     /**
-     * 显示持久通知
-     * @param message 通知消息
-     * @param level 通知级别
+     * Show persistent notification
+     * @param message Notification message
+     * @param level Notification level
      */
     public showPersistentNotification(message: string, level: 'info' | 'warning' | 'error' = 'info'): void {
-        // 记录到输出
+        // Log to output
         this.log(message, level, false);
-        
-        // 创建带有按钮的通知
-        const viewOutput = '查看详情';
-        const options = { modal: false };
-        
+        // Create notification with buttons
+        const viewOutput = 'View Details';
+        const options: vscode.MessageOptions = { modal: false };
         if (level === 'error') {
             vscode.window.showErrorMessage(message, options, viewOutput)
                 .then(selection => {

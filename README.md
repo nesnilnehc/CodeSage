@@ -1,6 +1,6 @@
-# AI Code Review Extension
+# CodeSage
 
-A VS Code extension for Git commit code review that helps teams improve code quality through AI-powered code reviews. Works with any VS Code compatible editor.
+CodeSage is an intelligent code review assistant that leverages AI to analyze Git commits, identify potential issues, and suggest improvements. It seamlessly integrates with your development workflow to enhance code quality and maintainability across your projects. Compatible with all VS Code-based editors.
 
 ## Features
 
@@ -46,7 +46,7 @@ A VS Code extension for Git commit code review that helps teams improve code qua
 
 1. Open VS Code
 2. Go to Extensions view (View -> Extensions)
-3. Search for "AI Code Review"
+3. Search for "CodeSage"
 4. Click Install
 5. Configure your DeepSeek API key in settings
 
@@ -79,11 +79,11 @@ A VS Code extension for Git commit code review that helps teams improve code qua
 
 This extension contributes the following settings:
 
-* `ai-code-review.deepseekApiKey`: Your DeepSeek API key
-* `ai-code-review.selectedModel`: AI model to use (default: deepseek-r1)
-* `ai-code-review.language`: Language for code review output (default: zh)
-* `ai-code-review.maxCommits`: Maximum number of commits to display (default: 100)
-* `ai-code-review.defaultTimeRange`: Default time range for commit filtering in days (default: 7)
+* `codesage.deepseekApiKey`: Your DeepSeek API key
+* `codesage.selectedModel`: AI model to use (default: deepseek-r1)
+* `codesage.language`: Language for code review output (default: zh)
+* `codesage.maxCommits`: Maximum number of commits to display (default: 100)
+* `codesage.defaultTimeRange`: Default time range for commit filtering in days (default: 7)
 
 ## Known Issues
 
@@ -117,7 +117,7 @@ This feature will be available in a future update. Currently, the AI uses a stan
 
 ### 0.1.0
 
-Initial release of Windsurf Code Review Extension
+Initial release of CodeSage
 
 ## Development
 
@@ -136,9 +136,9 @@ npm run package-extension
 
 ### Debugging the Extension
 
-1. Open the extension project in Windsurf IDE
+1. Open the extension project
 2. Press F5 to start debugging
-3. This will launch a new Windsurf window with the extension loaded
+3. This will launch a new window with the extension loaded
 4. You can set breakpoints in your code to debug
 
 ### Contributing
@@ -155,14 +155,14 @@ MIT
 
 ## Future Plans
 
-We're actively working on enhancing the Windsurf Code Review Extension with the following features:
+We're actively working on enhancing CodeSage with the following features:
 
-- **Real AI Integration**: Connect to Windsurf's AI Chat API for intelligent code analysis
+- **Real AI Integration**: Connect to DeepSeek's AI Chat API for intelligent code analysis
 - **Team Collaboration**: Enable multiple reviewers to work on the same code review
 - **Custom Review Templates**: Create and save review templates for different types of code reviews
 - **Integration with Issue Trackers**: Link reviews to issues in popular tracking systems
 
 ## Acknowledgements
 
-- Thanks to the Windsurf IDE team for their excellent extension API
+- Thanks to the VS Code team for their excellent extension API
 - This project uses [simple-git](https://github.com/steveukx/git-js) for Git integration
