@@ -4,3 +4,4 @@ dist/
 *.vsix
 .DS_Store
 .windsurf-code-review/
+*.bak
