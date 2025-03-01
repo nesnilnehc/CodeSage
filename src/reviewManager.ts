@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import { GitService, CommitInfo } from './gitService';
+import { GitService, CommitInfo, CommitFile } from './gitService';
 import { NotificationManager } from './notificationManager';
 
 export interface ReviewComment {
@@ -23,6 +23,8 @@ export interface ReviewData {
 }
 
 export class ReviewManager {
+    private static readonly BATCH_SIZE = 5; // 每批处理的文件数量
+    private static readonly MAX_CONCURRENT_REVIEWS = 10; // 最大并发审查数
     private gitService: GitService;
     private repoPath: string = '';
     private selectedCommit: CommitInfo | undefined;
@@ -222,13 +224,51 @@ export class ReviewManager {
         }
     }
 
+    private async reviewFilesParallel(files: CommitFile[]): Promise<Map<string, ReviewData>> {
+        if (!this.selectedCommit) {
+            throw new Error('No commit selected');
+        }
+
+        const results = new Map<string, ReviewData>();
+        const batches = [];
+        const notificationManager = NotificationManager.getInstance();
+        
+        // 将文件分成多个批次
+        for (let i = 0; i < files.length; i += ReviewManager.BATCH_SIZE) {
+            batches.push(files.slice(i, i + ReviewManager.BATCH_SIZE));
+        }
+
+        // 处理每个批次
+        let processedFiles = 0;
+        const totalFiles = files.length;
+
+        for (const batch of batches) {
+            notificationManager.log(`Processing batch ${processedFiles / ReviewManager.BATCH_SIZE + 1} of ${Math.ceil(totalFiles / ReviewManager.BATCH_SIZE)}`, 'info', true);
+            
+            const batchPromises = batch.map(async file => {
+                const result = await this.reviewFile(file.path);
+                processedFiles++;
+                const progress = Math.round((processedFiles / totalFiles) * 100);
+                notificationManager.log(`Processed ${processedFiles}/${totalFiles} files (${progress}%)`, 'info', true);
+                return { file, result };
+            });
+
+            const batchResults = await Promise.all(batchPromises);
+            
+            // 保存结果
+            batchResults.forEach(({ file, result }) => {
+                results.set(file.path, result);
+            });
+        }
+
+        return results;
+    }
+
     public async generateReport(): Promise<string> {
-        // Get notification manager instance
         const notificationManager = NotificationManager.getInstance();
         notificationManager.startSession(true);
         
         try {
-            // Check if a commit is selected
             if (!this.selectedCommit) {
                 notificationManager.log('No commit selected', 'error', true);
                 throw new Error('No commit selected');
@@ -237,155 +277,138 @@ export class ReviewManager {
             notificationManager.log(`Starting code review report generation...`, 'info', true);
             notificationManager.log(`Selected commit: ${this.selectedCommit.hash} (${this.selectedCommit.message})`, 'info', false);
             
-            let reportContent = '';
             const { AIService } = await import('./aiService');
             const aiService = AIService.getInstance();
             
-            // Define in outer scope to make it available throughout the function
-            let totalFiles = 0;
+            // 获取所有需要审查的文件
+            const files = await this.gitService.getCommitFiles(this.selectedCommit.hash);
+            const totalFiles = files.length;
             
-            // Use window progress bar
-            await vscode.window.withProgress({
+            if (totalFiles === 0) {
+                notificationManager.log('No files found in commit', 'warning', true);
+                return 'No files found in commit';
+            }
+            
+            // 使用进度条显示审查进度
+            return await vscode.window.withProgress({
                 location: vscode.ProgressLocation.Window,
-                title: 'Generating code review report',
-                cancellable: false
-            }, async (progress) => {
-                // Step 1: Collect commit information (5%)
-                const step1Message = 'Step 1/4: Collecting commit information';
-                progress.report({ message: step1Message, increment: 5 });
-                notificationManager.log('Collecting commit information...', 'info', true);
-                
-                const commit = this.selectedCommit!;
-                
-                // Generate basic report structure
-                reportContent = `# Code Review Report\n\n`;
-                reportContent += `## Commit Information\n`;
-                reportContent += `\n`;
-                reportContent += `- Commit Hash: ${commit.hash}\n`;
-                reportContent += `- Author: ${commit.author} <${commit.authorEmail}>\n`;
-                reportContent += `- Date: ${commit.date}\n`;
-                reportContent += `- Commit Message: ${commit.message}\n\n`;
-                
-                notificationManager.log('Commit information collection completed', 'info', true);
-                
-                // Step 2: Get file changes (15%)
-                const step2Message = 'Step 2/4: Getting file changes';
-                progress.report({ message: step2Message, increment: 15 });
-                notificationManager.updateStatusBar(step2Message, 'Getting file changes...');
-                
-                // Get files from git
-                notificationManager.log('Getting file changes from Git...', 'info', true);
-                const files = await this.gitService.getCommitFiles(this.selectedCommit!.hash);
-                totalFiles = files.length;
-                
-                if (totalFiles === 0) {
-                    notificationManager.log('No file changes found', 'warning', true);
-                    throw new Error('No file changes found');
-                }
-                
+                title: 'Generating Code Review Report',
+                cancellable: true
+            }, async (progress, token) => {
                 notificationManager.log(`Found ${totalFiles} files to review`, 'info', true);
-                notificationManager.updateStatusBar(step2Message, `Found ${totalFiles} file changes`);
-                await new Promise(resolve => setTimeout(resolve, 1000));
                 
-                // Step 3: AI code review (60%)
-                reportContent += `## File Review\n\n`;
-                const incrementPerFile = 60 / totalFiles; // 60% progress allocated to file review
-                let fileCount = 0;
+                // 并行处理所有文件的审查
+                notificationManager.log('Step 1/3: Reviewing files...', 'info', true);
+                const reviewResults = await this.reviewFilesParallel(files);
                 
-                for (const file of files) {
-                    fileCount++;
-                    const fileProgress = `(${fileCount}/${totalFiles})`;
-                    const fileMessage = `Step 3/4: Reviewing file ${fileProgress}`;
-                    
-                    progress.report({
-                        message: fileMessage,
-                        increment: incrementPerFile
-                    });
-                    
-                    notificationManager.updateStatusBar(fileMessage, `File: ${file.path}`);
-                    notificationManager.log(`Reviewing file ${fileProgress}: ${file.path}`, 'info', true);
-                    reportContent += `### ${file.path}\n\n`;
-                    
-                    try {
-                        // Call AI service for code review
-                        notificationManager.log(`Analyzing file content...`, 'info', false);
-                        const review = await aiService.reviewCode({
-                            filePath: file.path,
-                            currentContent: file.content || '',
-                            previousContent: file.previousContent || ''
-                        });
-                        
-                        // Store and display review results
-                        notificationManager.log(`AI analysis completed, processing suggestions...`, 'info', false);
-                        await this.addAISuggestion(file.path, review.suggestions.join('\n'));
-                        
-                        reportContent += `#### AI Review Suggestions\n`;
-                        for (const suggestion of review.suggestions) {
-                            reportContent += `- ${suggestion}\n`;
-                        }
-                        
-                        if (review.score !== undefined) {
-                            await this.setCodeQualityScore(file.path, review.score);
-                            reportContent += `\nCode Quality Score: ${review.score}/100\n`;
-                            notificationManager.log(`File ${file.path} code quality score: ${review.score}/100`, 'info', true);
-                            notificationManager.updateStatusBar(fileMessage, `File: ${file.path} (Score: ${review.score}/100)`);
-                        }
-                        
-                        reportContent += '\n---\n\n';
-                        notificationManager.log(`File ${file.path} review completed`, 'info', true);
-                    } catch (error) {
-                        const errorMessage = `Error reviewing file ${file.path}: ${error}`;
-                        notificationManager.log(errorMessage, 'error', true);
-                        this.logError(error as Error, errorMessage);
-                        reportContent += `⚠️ ${errorMessage}\n\n`;
-                        notificationManager.updateStatusBar(fileMessage, `Error: ${errorMessage}`);
+                // 并行处理 AI 审查
+                notificationManager.log('Step 2/3: Running AI analysis...', 'info', true);
+                let processedAIFiles = 0;
+                const aiPromises = files.map(async file => {
+                    if (token.isCancellationRequested) {
+                        return null;
                     }
                     
-                    // Add delay between each file
-                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    try {
+                        const result = await aiService.reviewCode({
+                            filePath: file.path,
+                            currentContent: file.content,
+                            previousContent: file.previousContent
+                        });
+                        
+                        processedAIFiles++;
+                        const percentage = (processedAIFiles / totalFiles) * 100;
+                        progress.report({
+                            increment: 0,
+                            message: `AI analysis: ${processedAIFiles}/${totalFiles} files (${percentage.toFixed(1)}%)`
+                        });
+                        notificationManager.log(`AI analysis: ${processedAIFiles}/${totalFiles} files (${percentage.toFixed(1)}%)`, 'info', true);
+                        
+                        return result;
+                    } catch (error) {
+                        notificationManager.log(`Error getting AI review for ${file.path}: ${error}`, 'error', true);
+                        return null;
+                    }
+                });
+                
+                const aiResults = await Promise.all(aiPromises);
+                
+                // 生成报告
+                notificationManager.log('Step 3/3: Generating final report...', 'info', true);
+                let reportContent = '';
+                let processedFiles = 0;
+                
+                // 批量更新建议和分数
+                const updatePromises: Promise<void>[] = [];
+                
+                for (let i = 0; i < files.length; i++) {
+                    const file = files[i];
+                    const review = reviewResults.get(file.path);
+                    const aiResult = aiResults[i];
+                    
+                    if (!review || !aiResult) continue;
+                    
+                    // 更新进度
+                    processedFiles++;
+                    const percentage = (processedFiles / totalFiles) * 100;
+                    progress.report({
+                        increment: 0,
+                        message: `Generating report: ${processedFiles}/${totalFiles} files (${percentage.toFixed(1)}%)`
+                    });
+                    notificationManager.log(`Generating report: ${processedFiles}/${totalFiles} files (${percentage.toFixed(1)}%)`, 'info', true);
+                    
+                    // 收集所有更新操作
+                    if (aiResult.suggestions) {
+                        updatePromises.push(
+                            ...aiResult.suggestions.map(suggestion =>
+                                this.addAISuggestion(file.path, suggestion)
+                            )
+                        );
+                    }
+                    
+                    if (aiResult.score !== undefined) {
+                        updatePromises.push(
+                            this.setCodeQualityScore(file.path, aiResult.score)
+                        );
+                    }
+                    
+                    // 生成报告内容
+                    reportContent += `\n## File: ${file.path}\n`;
+                    reportContent += `Code Quality Score: ${aiResult.score || 'N/A'}\n\n`;
+                    
+                    if (aiResult.suggestions && aiResult.suggestions.length > 0) {
+                        reportContent += '### AI Suggestions:\n';
+                        for (const suggestion of aiResult.suggestions) {
+                            reportContent += `- ${suggestion}\n`;
+                        }
+                    }
+                    
+                    if (review.comments.length > 0) {
+                        reportContent += '\n### Comments:\n';
+                        for (const comment of review.comments) {
+                            reportContent += `- Line ${comment.lineNumber}: ${comment.content} (by ${comment.author})\n`;
+                        }
+                    }
+                    
+                    reportContent += '\n---\n';
                 }
                 
-                // Step 4: Complete report (20%)
-                const step4Message = 'Step 4/4: Completing report';
-                progress.report({ message: step4Message, increment: 20 });
-                notificationManager.updateStatusBar(step4Message, 'Completing report summary...');
-                notificationManager.log('Completing report summary...', 'info', true);
+                // 并行执行所有更新操作
+                notificationManager.log('Saving review data...', 'info', true);
+                await Promise.all(updatePromises);
                 
-                // Add summary
-                reportContent += `## Summary\n\n`;
-                reportContent += `- Total files reviewed: ${totalFiles}\n`;
-                reportContent += `- Completion time: ${new Date().toLocaleString()}\n\n`;
-                
-                await new Promise(resolve => setTimeout(resolve, 1000));
-                notificationManager.log('Report summary completed', 'info', true);
+                notificationManager.log('Report generation completed', 'info', true);
+                return reportContent;
             });
-            
-            // Complete
-            notificationManager.complete('AI code review completed');
-            notificationManager.showPersistentNotification(`Reviewed ${totalFiles} files`, 'info');
-            notificationManager.showPersistentNotification('Report generated, view detailed content in editor', 'info');
-            
-            return reportContent;
+
         } catch (error) {
             const errorMessage = `Error generating code review report: ${error}`;
-            notificationManager.error(errorMessage);
+            notificationManager.log(errorMessage, 'error', true);
             this.logError(error as Error, errorMessage);
             throw error;
         } finally {
             // Delay 5 seconds before hiding status bar
-            notificationManager.endSession(5000);
-        }
-    }
-
-    private async ensureDirectoryExists(dirPath: string): Promise<void> {
-        try {
-            if (!fs.existsSync(dirPath)) {
-                fs.mkdirSync(dirPath, { recursive: true });
-                this.logInfo(`Created directory: ${dirPath}`);
-            }
-        } catch (error) {
-            this.logError(error as Error, 'Failed to create directory');
-            throw error;
+            notificationManager.endSession(5000, false, true);  // 不清空输出，保持输出面板可见
         }
     }
 }

@@ -38,11 +38,19 @@ export class NotificationManager {
 
     /**
      * End current session
+     * @param delay Delay in milliseconds before hiding status bar
+     * @param clearOutput Whether to clear output channel
+     * @param keepOutputVisible Whether to keep output channel visible
      */
-    public endSession(delay: number = 5000): void {
+    public endSession(delay: number = 5000, clearOutput: boolean = false, keepOutputVisible: boolean = true): void {
         this.showNotifications = false;
         setTimeout(() => {
-            this.outputChannel.clear();
+            if (clearOutput) {
+                this.outputChannel.clear();
+            }
+            if (!keepOutputVisible) {
+                this.outputChannel.hide();
+            }
             this.statusBarItem.hide();
         }, delay);
     }

@@ -42,7 +42,11 @@ export class AIService {
                 baseURL: 'https://api.deepseek.com/v1',
                 apiKey: this.apiKey,
                 maxRetries: 3,
-                timeout: 30 * 1000 // 30 秒超时
+                timeout: AIService.TIMEOUT,
+                defaultHeaders: {
+                    'Content-Type': 'application/json'
+                },
+                defaultQuery: undefined
             });
         }
     }
@@ -54,109 +58,131 @@ export class AIService {
         return AIService.instance;
     }
 
+    private static readonly TIMEOUT = 20 * 1000; // 20 seconds timeout
+    private static readonly MAX_CONTENT_LENGTH = 4000; // Maximum content length
+    private static readonly RETRY_DELAY = 1000; // 1 second delay between retries
+    private static readonly MAX_RETRIES = 2; // Maximum number of retries
+
+    private async retryWithDelay<T>(operation: () => Promise<T>, retries = AIService.MAX_RETRIES): Promise<T> {
+        try {
+            return await operation();
+        } catch (error) {
+            if (retries > 0) {
+                await new Promise(resolve => setTimeout(resolve, AIService.RETRY_DELAY));
+                return this.retryWithDelay(operation, retries - 1);
+            }
+            throw error;
+        }
+    }
+
+    private truncateContent(content: string): string {
+        if (content.length <= AIService.MAX_CONTENT_LENGTH) {
+            return content;
+        }
+        return content.slice(0, AIService.MAX_CONTENT_LENGTH) + '\n... (content truncated for performance)\n';
+    }
+
+    private async analyzeCode(filePath: string, content: string, isCurrentContent: boolean): Promise<string> {
+        const systemPrompt = this.language === 'zh' ?
+            '你是一个代码审查专家。请用中文回复。' :
+            'You are a code review expert. Please reply in English.';
+
+        const prompt = this.language === 'zh' ?
+            `请审查以下${isCurrentContent ? '当前' : '之前的'}代码，并提供问题和建议。
+文件：${filePath}
+代码：
+${content}` :
+            `Please review the ${isCurrentContent ? 'current' : 'previous'} code and provide issues and suggestions.
+File: ${filePath}
+Code:
+${content}`;
+
+        const response = await this.retryWithDelay(async () => {
+            if (!this.client) {
+                throw new Error('OpenAI client not initialized');
+            }
+
+            return await this.client.chat.completions.create({
+                model: 'deepseek-chat',
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: prompt }
+                ],
+                temperature: 0.3,
+                max_tokens: 500
+            });
+        });
+
+        return response.choices[0].message.content || '';
+    }
+
     public async reviewCode(params: { filePath: string; currentContent: string; previousContent: string }): Promise<CodeReviewResult> {
         try {
             if (!this.apiKey) {
                 throw new Error('DeepSeek API key not set');
             }
 
-            // 使用 DeepSeek API 进行代码审查
-            const reviewId = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
-            const systemPrompt = this.language === 'zh' ?
-                `你是一个代码审查专家。请用中文回复。审查编号：${reviewId}` :
-                `You are a code review expert. Please reply in English. Review ID: ${reviewId}`;
+            // 分别分析当前和之前的代码
+            const [currentAnalysis, previousAnalysis] = await Promise.all([
+                this.analyzeCode(params.filePath, this.truncateContent(params.currentContent), true),
+                this.analyzeCode(params.filePath, this.truncateContent(params.previousContent), false)
+            ]);
 
-            const prompt = this.language === 'zh' ?
-                `请审查以下代码变更并提供：
-1. 具体的问题、bug 或改进建议
-2. 代码质量和可维护性的建议
-3. 代码质量评分（0-10分）
+            // 生成最终分析
+            const finalPrompt = this.language === 'zh' ?
+                `请基于以下分析结果，提供最终的代码审查报告。
 
-重要规则：
-1. 关注高层次的问题和改进点
-2. 只在指出具体问题时引用相关代码片段，且只引用有问题的部分
-3. 保持评论简洁和可操作性
-4. 不要展示完整的代码文件
+当前代码分析：
+${currentAnalysis}
 
-文件：${params.filePath}
-语言：${this.detectLanguage(params.filePath)}
+之前代码分析：
+${previousAnalysis}
 
-请按以下格式提供审查意见：
----问题评论---
-(列出具体问题，只引用有问题的代码片段)
-
+请按以下格式回复：
 ---改进建议---
-(列出可操作的改进建议)
+(列出具体的改进建议)
 
 ---评分---
-(给出 0-10 分的评分)
+(0-10分)` :
+                `Based on the following analysis results, provide a final code review report.
 
-代码变更：
-${params.previousContent}
-${params.currentContent}` :
-                `Please review the following code changes and provide:
-1. Specific comments about potential issues, bugs, or improvements
-2. Suggestions for better code quality and maintainability
-3. A code quality score from 0 to 10
+Current code analysis:
+${currentAnalysis}
 
-IMPORTANT RULES:
-1. Focus on high-level issues and improvements
-2. Only include relevant code snippets when pointing out specific issues, and only show the problematic parts
-3. Keep comments concise and actionable
-4. DO NOT show the complete code files
+Previous code analysis:
+${previousAnalysis}
 
-File: ${params.filePath}
-Language: ${this.detectLanguage(params.filePath)}
-
-Please provide your review in the following format:
----COMMENTS---
-(List specific issues, only include problematic code snippets)
-
+Please reply in the following format:
 ---SUGGESTIONS---
-(List actionable improvements)
+(List specific improvement suggestions)
 
 ---SCORE---
-(Provide a score from 0-10)
+(0-10)`;
 
-Code changes:
-${params.previousContent}
-${params.currentContent}`;
+            const finalResponse = await this.retryWithDelay(async () => {
+                if (!this.client) {
+                    throw new Error('OpenAI client not initialized');
+                }
 
-            if (!this.client) {
-                throw new Error('OpenAI client not initialized');
-            }
-
-            let response = await this.client.chat.completions.create({
-                model: 'deepseek-chat',
-                messages: [
-                    {
-                        role: 'system',
-                        content: systemPrompt
-                    },
-                    {
-                        role: 'user',
-                        content: prompt
-                    }
-                ],
-                temperature: 0.3,
-                max_tokens: 1000
+                return await this.client.chat.completions.create({
+                    model: 'deepseek-chat',
+                    messages: [
+                        {
+                            role: 'system',
+                            content: this.language === 'zh' ?
+                                '你是一个代码审查专家。请基于之前的分析给出最终的审查意见。' :
+                                'You are a code review expert. Please provide final review based on previous analysis.'
+                        },
+                        { role: 'user', content: finalPrompt }
+                    ],
+                    temperature: 0.3,
+                    max_tokens: 500
+                });
             });
 
-            // 解析 AI 响应
-            if (!response) {
-                throw new Error('No response from API');
-            }
-            const aiResponse = response.choices[0].message.content || '';
-            const comments: string[] = [];
+            const aiResponse = finalResponse.choices[0].message.content || '';
             const suggestions: string[] = [];
             let score = 0;
-
-            // 提取评论
-            const commentsPattern = this.language === 'zh' ? /---问题评论---(.*?)(?=---改进建议---)/s : /---COMMENTS---(.*?)(?=---SUGGESTIONS---)/s;
-            const commentsMatch = aiResponse.match(commentsPattern);
-            if (commentsMatch) {
-                comments.push(...commentsMatch[1].trim().split('\n').filter((c: string) => c.trim()));
-            }
 
             // 提取建议
             const suggestionsPattern = this.language === 'zh' ? /---改进建议---(.*?)(?=---评分---)/s : /---SUGGESTIONS---(.*?)(?=---SCORE---)/s;
