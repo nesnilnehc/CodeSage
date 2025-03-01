@@ -2,7 +2,7 @@
   "name": "nesnilnehc-codesage",
   "displayName": "CodeSage",
   "description": "An AI-powered extension for Git commit code review",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "nesnilnehc",
   "repository": {
     "type": "git",
