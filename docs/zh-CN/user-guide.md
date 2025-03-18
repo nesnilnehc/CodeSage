@@ -36,7 +36,6 @@
 - `CodeSage: Generate Report` - 生成审查报告
 - `CodeSage: Filter by Date Range` - 按日期筛选提交
 - `CodeSage: Filter by Commit ID` - 按提交 ID 筛选
-- `CodeSage: Filter by Branch` - 按分支筛选提交
 
 ## 审查流程
 

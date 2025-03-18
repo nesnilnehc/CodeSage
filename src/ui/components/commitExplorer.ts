@@ -1,13 +1,13 @@
 import * as vscode from 'vscode';
-import * as path from 'path';
-import { GitService, CommitInfo } from './gitService';
+import { GitService, CommitInfo } from '../../services/git/gitService';
+import { OUTPUT } from '../../i18n';
 
 export class CommitExplorerProvider implements vscode.TreeDataProvider<CommitTreeItem> {
     private _onDidChangeTreeData: vscode.EventEmitter<CommitTreeItem | undefined | null | void> = new vscode.EventEmitter<CommitTreeItem | undefined | null | void>();
     readonly onDidChangeTreeData: vscode.Event<CommitTreeItem | undefined | null | void> = this._onDidChangeTreeData.event;
     
     private isLoading: boolean = false;
-    private loadingMessage: string = 'Loading commits...';
+    private loadingMessage: string = OUTPUT.COMMIT_EXPLORER.LOADING;
     private errorMessage: string | undefined = undefined;
 
     constructor(private gitService: GitService) {}
@@ -41,15 +41,15 @@ export class CommitExplorerProvider implements vscode.TreeDataProvider<CommitTre
             // Show loading indicator if we're loading
             if (this.isLoading) {
                 const loadingItem = new vscode.TreeItem(this.loadingMessage);
-                loadingItem.description = 'Please wait...';
+                loadingItem.description = OUTPUT.COMMIT_EXPLORER.LOADING_DESCRIPTION;
                 loadingItem.contextValue = 'loading';
                 return [loadingItem as any];
             }
             
             // Show error message if we have one
             if (this.errorMessage) {
-                const errorItem = new vscode.TreeItem(`Error: ${this.errorMessage}`);
-                errorItem.description = 'See console for details';
+                const errorItem = new vscode.TreeItem(OUTPUT.COMMIT_EXPLORER.ERROR_PREFIX(this.errorMessage));
+                errorItem.description = OUTPUT.COMMIT_EXPLORER.ERROR_DESCRIPTION;
                 errorItem.contextValue = 'error';
                 return [errorItem as any];
             }
@@ -58,42 +58,42 @@ export class CommitExplorerProvider implements vscode.TreeDataProvider<CommitTre
                 // Check if we have a workspace folder
                 const workspaceFolders = vscode.workspace.workspaceFolders;
                 if (!workspaceFolders || workspaceFolders.length === 0) {
-                    console.error('No workspace folder open');
-                    const noWorkspaceItem = new vscode.TreeItem('No workspace folder open');
-                    noWorkspaceItem.description = 'Please open a Git repository folder';
+                    console.error(OUTPUT.COMMIT_EXPLORER.NO_WORKSPACE_FOLDER);
+                    const noWorkspaceItem = new vscode.TreeItem(OUTPUT.COMMIT_EXPLORER.NO_WORKSPACE_FOLDER);
+                    noWorkspaceItem.description = OUTPUT.COMMIT_EXPLORER.NO_WORKSPACE_DESCRIPTION;
                     noWorkspaceItem.contextValue = 'noWorkspace';
                     return [noWorkspaceItem as any];
                 }
                 
-                const repoPath = workspaceFolders[0].uri.fsPath;
-                console.log(`Using repository path: ${repoPath}`);
+                const repoPath = workspaceFolders[0]?.uri.fsPath;
+                console.log(OUTPUT.COMMIT_EXPLORER.USING_REPOSITORY_PATH(repoPath || ''));
                 
                 // Try to fetch commits
                 try {
-                    console.log('Fetching commits from repository...');
+                    console.log(OUTPUT.COMMIT_EXPLORER.FETCHING_COMMITS);
                     
                     // Ensure repository is set
                     try {
-                        await this.gitService.setRepository(repoPath);
-                        console.log('Repository set successfully');
+                        await this.gitService.setRepository(repoPath || '');
+                        console.log(OUTPUT.COMMIT_EXPLORER.REPOSITORY_SET_SUCCESS);
                     } catch (repoError) {
-                        console.error(`Error setting repository: ${repoError}`);
-                        this.setError(`Failed to set repository: ${repoError}`);
+                        console.error(OUTPUT.COMMIT_EXPLORER.ERROR_SETTING_REPOSITORY(String(repoError)));
+                        this.setError(OUTPUT.COMMIT_EXPLORER.ERROR_SETTING_REPOSITORY(String(repoError)));
                         throw repoError;
                     }
                     
                     // Get commits
                     commits = await this.gitService.getCommits();
-                    console.log(`Found ${commits.length} commits`);
+                    console.log(OUTPUT.COMMIT_EXPLORER.FOUND_COMMITS(commits.length.toString()));
                 } catch (error) {
-                    console.error(`Error fetching commits: ${error}`);
-                    this.setError(`Failed to fetch commits: ${error}`);
+                    console.error(OUTPUT.COMMIT_EXPLORER.ERROR_FETCHING_COMMITS(String(error)));
+                    this.setError(OUTPUT.COMMIT_EXPLORER.ERROR_FETCHING_COMMITS(String(error)));
                     throw error;
                 }
                 
                 if (commits.length === 0) {
-                    const noCommitsItem = new vscode.TreeItem('No commits found');
-                    noCommitsItem.description = 'Try a different repository or branch';
+                    const noCommitsItem = new vscode.TreeItem(OUTPUT.COMMIT_EXPLORER.NO_COMMITS_FOUND);
+                    noCommitsItem.description = OUTPUT.COMMIT_EXPLORER.NO_COMMITS_DESCRIPTION;
                     noCommitsItem.contextValue = 'noCommits';
                     return [noCommitsItem as any];
                 }
@@ -106,9 +106,9 @@ export class CommitExplorerProvider implements vscode.TreeDataProvider<CommitTre
                     );
                 });
             } catch (error) {
-                console.error(`Error in getChildren: ${error}`);
-                const errorItem = new vscode.TreeItem(`Error: ${error}`);
-                errorItem.description = 'See console for details';
+                console.error(OUTPUT.COMMIT_EXPLORER.ERROR_GET_CHILDREN(String(error)));
+                const errorItem = new vscode.TreeItem(OUTPUT.COMMIT_EXPLORER.ERROR_PREFIX(String(error)));
+                errorItem.description = OUTPUT.COMMIT_EXPLORER.ERROR_DESCRIPTION;
                 errorItem.contextValue = 'error';
                 return [errorItem as any];
             }
@@ -131,8 +131,8 @@ export class CommitExplorerProvider implements vscode.TreeDataProvider<CommitTre
 export class CommitTreeItem extends vscode.TreeItem {
     constructor(
         public readonly commit: CommitInfo,
-        public readonly label: string,
-        public readonly collapsibleState: vscode.TreeItemCollapsibleState
+        public override readonly label: string,
+        public override readonly collapsibleState: vscode.TreeItemCollapsibleState
     ) {
         super(label, collapsibleState);
         
@@ -158,7 +158,7 @@ export class CommitTreeItem extends vscode.TreeItem {
 
 export class CommitDetailItem extends CommitTreeItem {
     constructor(
-        public readonly label: string,
+        public override readonly label: string,
         public readonly value: string,
         commit: CommitInfo
     ) {
@@ -166,6 +166,6 @@ export class CommitDetailItem extends CommitTreeItem {
         this.description = value;
         this.tooltip = `${label}: ${value}`;
         this.contextValue = 'commitDetail';
-        this.command = undefined;
+        this.command = undefined as unknown as vscode.Command;
     }
 }

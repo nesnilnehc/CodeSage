@@ -16,13 +16,15 @@ module.exports = {
     minimize: true
   },
   externals: {
-    vscode: 'commonjs vscode' // 只保留 vscode 作为 external
+    vscode: 'commonjs vscode' // Keep only vscode as external
   },
   performance: {
     hints: false
   },
   resolve: {
-    extensions: ['.ts', '.js']
+    extensions: ['.ts', '.js'],
+    // Add module resolution configuration
+    modules: [path.resolve(__dirname, 'src'), 'node_modules']
   },
   module: {
     rules: [
@@ -31,7 +33,12 @@ module.exports = {
         exclude: /node_modules/,
         use: [
           {
-            loader: 'ts-loader'
+            loader: 'ts-loader',
+            options: {
+              compilerOptions: {
+                moduleResolution: 'node'
+              }
+            }
           }
         ]
       }

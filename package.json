@@ -25,45 +25,43 @@
     "code quality"
   ],
   "activationEvents": [
-    "onStartupFinished",
-    "onCommand:codesage.startReview",
-    "onCommand:codesage.configureApiKey",
-    "onView:commitExplorer",
-    "onView:fileExplorer"
+    "onStartupFinished"
   ],
   "main": "./dist/extension.js",
   "contributes": {
     "configuration": {
       "title": "AI Code Review",
       "properties": {
-        "codesage.deepseekApiKey": {
+        "codesage.modelType": {
           "type": "string",
-          "default": "",
-          "markdownDescription": "API key for DeepSeek service."
-        },
-        "codesage.selectedModel": {
-          "type": "string",
-          "default": "deepseek-r1",
+          "default": "DeepSeek R1",
           "enum": [
-            "deepseek-r1"
+            "DeepSeek R1",
+            "DeepSeek V3"
           ],
           "enumDescriptions": [
             "DeepSeek R1 AI model for code review"
           ],
           "markdownDescription": "AI model used for code review."
         },
+        "codesage.baseURL": {
+          "type": "string",
+          "default": "https://api.deepseek.com/v1",
+          "markdownDescription": "Base URL for the API service. Different URLs may be required depending on the selected AI model."
+        },
+        "codesage.apiKey": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "API key for the selected AI service."
+        },
         "codesage.language": {
           "type": "string",
-          "default": "zh",
+          "default": "中文",
           "enum": [
-            "zh",
-            "en"
+            "English",
+            "中文"
           ],
-          "enumDescriptions": [
-            "中文",
-            "English"
-          ],
-          "markdownDescription": "Language for code review results."
+          "description": "The language used for UI elements (including buttons), Output messages, and Code Review results."
         }
       }
     },
@@ -97,10 +95,6 @@
       {
         "command": "codesage.filterByCommitId",
         "title": "Filter by Commit ID"
-      },
-      {
-        "command": "codesage.filterByBranch",
-        "title": "Filter by Branch"
       },
       {
         "command": "codesage.generateReport",
@@ -173,11 +167,6 @@
           "group": "1_filtering"
         },
         {
-          "command": "codesage.filterByBranch",
-          "when": "view == commitExplorer",
-          "group": "1_filtering"
-        },
-        {
           "command": "codesage.selectModel",
           "when": "view == commitExplorer",
           "group": "2_settings"
@@ -204,12 +193,13 @@
     "@vscode/vsce": "^3.2.2",
     "eslint": "^8.18.0",
     "ts-loader": "^9.3.1",
-    "typescript": "^4.7.4",
+    "typescript": "^5.3.3",
     "webpack": "^5.73.0",
     "webpack-cli": "^4.10.0"
   },
   "dependencies": {
     "axios": "^1.8.1",
+    "i18next": "^22.5.1",
     "openai": "^4.85.4",
     "simple-git": "^3.16.0"
   }

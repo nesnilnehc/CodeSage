@@ -36,7 +36,6 @@
 - `CodeSage: Generate Report` - Generate review report
 - `CodeSage: Filter by Date Range` - Filter commits by date
 - `CodeSage: Filter by Commit ID` - Filter specific commits
-- `CodeSage: Filter by Branch` - Filter commits by branch
 
 ## Review Process
 

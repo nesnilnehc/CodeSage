@@ -1,0 +1,5 @@
+1. [MUST][FORMAT] Code must be encoded in UTF-8.
+2. [MUST][NAMING] TypeScript/JavaScript file names must use camelCase naming convention, such as fileUtils.ts, gitService.ts. PascalCase naming convention is not allowed, such as FileUtils.ts, GitService.ts. This rule also applies to type definition files.
+3. [MUST][STANDARD] Adopt best practices, enable strict compilation rules, and utilize the latest TypeScript features to ensure early detection of issues.
+4. [SHOULD][FORMAT] When mixing Chinese and English, ensure that there is an English space between the two languages.
+5. [SHOULD][DOC] Comments should be written in English by default. If necessary, you can use Chinese comments, but please make sure that the code is still readable and maintainable.

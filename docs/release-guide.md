@@ -12,7 +12,7 @@ This guide covers the complete release process for CodeSage extension, including
 
 ### 1. Setup Development Environment
 
-- Node.js installed
+- Node.js v20 or higher
 - VS Code installed
 - Git installed and configured
 - GitHub CLI (`gh`) installed

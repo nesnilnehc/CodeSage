@@ -1,23 +1,21 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { ReviewManager } from './reviewManager';
+import { ReviewManager } from '../../services/review/reviewManager';
 
 export class ReviewPanel {
     public static currentPanel: ReviewPanel | undefined;
     private readonly _panel: vscode.WebviewPanel;
-    private readonly _extensionUri: vscode.Uri;
     private _disposables: vscode.Disposable[] = [];
     private _reviewManager: ReviewManager;
     private _filePath: string;
 
     private constructor(
         panel: vscode.WebviewPanel,
-        extensionUri: vscode.Uri,
+        _extensionUri: vscode.Uri,
         reviewManager: ReviewManager,
         filePath: string
     ) {
         this._panel = panel;
-        this._extensionUri = extensionUri;
         this._reviewManager = reviewManager;
         this._filePath = filePath;
 
@@ -30,7 +28,7 @@ export class ReviewPanel {
 
         // Update the content based on view changes
         this._panel.onDidChangeViewState(
-            e => {
+            () => {
                 if (this._panel.visible) {
                     this._update();
                 }
@@ -56,6 +54,12 @@ export class ReviewPanel {
                         this._update();
                         return;
                     case 'generateReport':
+                        const selectedCommit = this._reviewManager.getSelectedCommit();
+                        if (!selectedCommit || !selectedCommit.hash) {
+                            // 发送消息到 webview，通知用户需要先选择一个有效的commit
+                            this._panel.webview.postMessage({ command: 'showError', message: '请先选择一个有效的commit' });
+                            return;
+                        }
                         await this._reviewManager.generateReport();
                         return;
                 }
@@ -116,9 +120,8 @@ export class ReviewPanel {
     }
 
     private async _update() {
-        const webview = this._panel.webview;
         this._panel.title = `Review: ${path.basename(this._filePath)}`;
-        this._panel.webview.html = await this._getHtmlForWebview(webview);
+        this._panel.webview.html = await this._getHtmlForWebview();
     }
 
     private async performAIReview() {
@@ -140,9 +143,7 @@ export class ReviewPanel {
                 async (progress) => {
                     progress.report({ increment: 0 });
                     
-                    // Get file content
-                    const fileContent = await this._reviewManager.getSelectedCommit()?.files || [];
-                    
+                    // 移除未使用的fileContent变量
                     progress.report({ increment: 30, message: 'Processing file content...' });
                     
                     // Simulate AI analysis (in a real extension, this would call the DeepSeek API)
@@ -174,13 +175,13 @@ export class ReviewPanel {
                 }
             );
             
-            vscode.window.showInformationMessage('AI code review completed');
+            this._reviewManager.getNotificationManager().log('AI code review completed', 'info', true);
         } catch (error) {
-            vscode.window.showErrorMessage(`AI review failed: ${error}`);
+            this._reviewManager.getNotificationManager().log(`AI review failed: ${error}`, 'error', true);
         }
     }
 
-    private async _getHtmlForWebview(webview: vscode.Webview) {
+    private async _getHtmlForWebview() {
         // Get the file content
         const selectedCommit = this._reviewManager.getSelectedCommit();
         

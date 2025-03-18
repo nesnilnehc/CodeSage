@@ -8,10 +8,12 @@ export class NotificationManager {
     private outputChannel: vscode.OutputChannel;
     private statusBarItem: vscode.StatusBarItem;
     private showNotifications: boolean = true;
+    private debugMode: boolean = false;
 
     private constructor() {
         this.outputChannel = vscode.window.createOutputChannel('CodeSage');
         this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+        this.debugMode = process.env['NODE_ENV'] === 'development';
     }
 
     /**
@@ -26,10 +28,14 @@ export class NotificationManager {
 
     /**
      * Start a new session
+     * @param showOutputChannel Whether to show output channel
+     * @param clearOutput Whether to clear output channel
      */
-    public startSession(showOutputChannel: boolean = true): void {
+    public startSession(showOutputChannel: boolean = true, clearOutput: boolean = true): void {
         this.showNotifications = true;
-        this.outputChannel.clear();
+        if (clearOutput) {
+            this.outputChannel.clear();
+        }
         if (showOutputChannel) {
             this.outputChannel.show(true);
         }
@@ -69,21 +75,50 @@ export class NotificationManager {
      * @param showNotification Whether to show notification
      */
     public log(message: string, level: 'info' | 'warning' | 'error' = 'info', showNotification: boolean = false): void {
-        const timestamp = new Date().toLocaleTimeString();
+        const timestamp = new Date().toISOString();
         const prefix = level === 'error' ? '❌' : level === 'warning' ? '⚠️' : '✨';
-        this.outputChannel.appendLine(`[${timestamp}] ${prefix} ${message}`);
-        if (showNotification && this.showNotifications) {
+        const simpleMessage = `[${timestamp}] ${prefix} ${message}`;
+        
+        // Debug Console: 开发调试信息
+        if (this.debugMode) {
+            console.log(`[CodeSage] ${simpleMessage}`);
+        }
+        
+        // 始终输出到输出通道，确保所有日志都被记录
+        this.outputChannel.appendLine(simpleMessage);
+        
+        // 根据 showNotification 参数和全局设置决定是否显示通知
+        if (this.showNotifications && (showNotification || level === 'error')) {
+            // 确保 message 是字符串并且处理可能的 undefined
+            const safeMessage = message ?? '';
+            let notificationMessage = safeMessage;
+            
+            // 只有当消息是有效字符串且包含 ']' 时才进行分割
+            if (safeMessage.startsWith('[') && safeMessage.includes('] ')) {
+                const parts = safeMessage.split('] ');
+                if (parts.length > 1) {
+                    notificationMessage = parts[1] || safeMessage;
+                }
+            }
+            
             switch (level) {
                 case 'info':
-                    vscode.window.showInformationMessage(message);
+                    vscode.window.showInformationMessage(notificationMessage);
                     break;
                 case 'warning':
-                    vscode.window.showWarningMessage(message);
+                    vscode.window.showWarningMessage(notificationMessage);
                     break;
                 case 'error':
-                    vscode.window.showErrorMessage(message);
+                    vscode.window.showErrorMessage(notificationMessage);
                     break;
             }
+        }
+    }
+
+    public debug(message: string): void {
+        if (this.debugMode) {
+            const timestamp = new Date().toISOString();
+            console.log(`[CodeSage Debug][${timestamp}] ${message}`);
         }
     }
 
