@@ -6,6 +6,14 @@ export enum Language {
     CHINESE = 'zh'
 }
 
+/**
+ * 双语消息结构
+ */
+export interface BilingualMessage {
+    zh: string;
+    en: string;
+}
+
 // 语言显示名称映射
 export const LanguageDisplayNames = {
     [Language.ENGLISH]: 'English',

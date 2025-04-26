@@ -167,7 +167,7 @@ export class FileTreeItem extends vscode.TreeItem {
         this.contextValue = 'file';
         
         this.command = {
-            command: 'codesage.viewFile',
+            command: 'codekarmic.viewFile',
             title: 'View File',
             arguments: [filePath]
         };

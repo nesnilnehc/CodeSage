@@ -1,4 +1,4 @@
-# CodeSage 开发者指南
+# CodeKarmic 开发者指南
 
 ## 架构设计
 
@@ -20,8 +20,8 @@
 
 1. 克隆仓库
 ```bash
-git clone https://github.com/nesnilnehc/CodeSage.git
-cd CodeSage
+git clone https://github.com/nesnilnehc/CodeKarmic.git
+cd CodeKarmic
 ```
 
 2. 安装依赖

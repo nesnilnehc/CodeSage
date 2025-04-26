@@ -7,7 +7,7 @@ export const REVIEWABLE_FILE_EXTENSIONS = [
   // Code files
   '.ts', '.js', '.tsx', '.jsx', '.sql', '.java', '.py', '.rb', '.go', '.c', '.cpp', '.h', '.hpp', 
   '.cs', '.php', '.swift', '.kt', '.rs', '.scala', '.dart', '.groovy', '.sh', '.bash',
-  '.html', '.css', '.scss', '.sass', '.less', '.json', '.yaml', '.yml', '.xml',
+  '.html', '.css', '.scss', '.sass', '.less', '.json', '.yaml', '.yml', '.xml', '.vue',
   
   // Markdown documents
   '.md', '.markdown',
@@ -45,4 +45,64 @@ export function getReviewableFileTypesDescription(): string {
     .join(', ');
     
   return `Code files (${codeExts}) and Markdown documents (.md, .markdown)`;
+}
+
+/**
+ * 获取文件语言类型
+ * @param filePath 文件路径
+ * @returns 文件对应的语言类型
+ */
+export function getFileLanguage(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  
+  // 映射文件扩展名到语言
+  const extensionToLanguage: Record<string, string> = {
+    '.ts': 'typescript',
+    '.js': 'javascript',
+    '.tsx': 'typescript',
+    '.jsx': 'javascript',
+    '.sql': 'sql',
+    '.java': 'java',
+    '.py': 'python',
+    '.rb': 'ruby',
+    '.go': 'go',
+    '.c': 'c',
+    '.cpp': 'cpp',
+    '.h': 'c',
+    '.hpp': 'cpp',
+    '.cs': 'csharp',
+    '.php': 'php',
+    '.swift': 'swift',
+    '.kt': 'kotlin',
+    '.rs': 'rust',
+    '.scala': 'scala',
+    '.dart': 'dart',
+    '.groovy': 'groovy',
+    '.sh': 'bash',
+    '.bash': 'bash',
+    '.html': 'html',
+    '.css': 'css',
+    '.scss': 'scss',
+    '.sass': 'sass',
+    '.less': 'less',
+    '.json': 'json',
+    '.yaml': 'yaml',
+    '.yml': 'yaml',
+    '.xml': 'xml',
+    '.vue': 'vue',
+    '.md': 'markdown',
+    '.markdown': 'markdown'
+  };
+  
+  // 特殊文件名处理
+  const basename = path.basename(filePath);
+  if (basename === 'Dockerfile') return 'dockerfile';
+  if (basename === 'Makefile') return 'makefile';
+  if (basename === '.gitignore') return 'gitignore';
+  if (basename === '.dockerignore') return 'dockerignore';
+  if (basename === '.env') return 'env';
+  if (basename === '.editorconfig') return 'editorconfig';
+  
+  // 返回映射结果或默认为纯文本
+  return extensionToLanguage[ext] || 'plaintext';
 }

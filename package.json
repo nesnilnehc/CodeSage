@@ -1,129 +1,218 @@
 {
-  "name": "nesnilnehc-codesage",
-  "displayName": "CodeSage",
-  "description": "An AI-powered extension for Git commit code review",
+  "name": "codekarmic",
+  "displayName": "CodeKarmic",
+  "description": "AI-powered extension for Git commit code review.",
   "version": "0.2.0",
   "publisher": "nesnilnehc",
   "repository": {
     "type": "git",
-    "url": "https://github.com/nesnilnehc/CodeSage"
+    "url": "https://github.com/nesnilnehc/codekarmic"
   },
   "license": "MIT",
   "engines": {
-    "vscode": "^1.63.0"
+    "vscode": "^1.85.0"
   },
   "categories": [
-    "Programming Languages",
-    "SCM Providers",
     "Other"
   ],
   "keywords": [
-    "code review",
-    "ai",
     "git",
-    "deepseek",
-    "code quality"
+    "commit",
+    "review",
+    "code review",
+    "AI",
+    "LLM"
   ],
   "activationEvents": [
-    "onStartupFinished"
+    "onStartupFinished",
+    "onCommand:codekarmic.startReview",
+    "onCommand:codekarmic.reviewCode",
+    "onCommand:codekarmic.selectCommit",
+    "onCommand:codekarmic.viewFile",
+    "onView:commitExplorer",
+    "onView:fileExplorer",
+    "onWebviewPanel:codeReview"
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "commands": [
+      {
+        "command": "codekarmic.startReview",
+        "title": "Start Code Review",
+        "category": "CodeKarmic",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "codekarmic.generateReport",
+        "title": "Generate Code Review Report",
+        "category": "CodeKarmic",
+        "icon": "$(file-text)"
+      },
+      {
+        "command": "codekarmic.configureApiKey",
+        "title": "Configure API Key",
+        "category": "CodeKarmic",
+        "icon": "$(key)"
+      },
+      {
+        "command": "codekarmic.openSettings",
+        "title": "Open Settings",
+        "category": "CodeKarmic",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "codekarmic.refreshCommits",
+        "title": "Refresh Commits",
+        "category": "CodeKarmic",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "codekarmic.refreshFiles",
+        "title": "Refresh Files",
+        "category": "CodeKarmic",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "codekarmic.filterByDateRange",
+        "title": "Filter by Date Range",
+        "category": "CodeKarmic",
+        "icon": "$(calendar)"
+      },
+      {
+        "command": "codekarmic.filterByCommitId",
+        "title": "Filter by Commit ID",
+        "category": "CodeKarmic",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "codekarmic.selectModel",
+        "title": "Select AI Model",
+        "category": "CodeKarmic",
+        "icon": "$(beaker)"
+      },
+      {
+        "command": "codekarmic.reviewExplorerItem",
+        "title": "Review File/Folder with AI",
+        "category": "CodeKarmic",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "codekarmic.togglePane",
+        "title": "Toggle Code Review AI",
+        "category": "CodeKarmic",
+        "icon": "$(preview)"
+      },
+      {
+        "command": "codekarmic.reviewSelectedItems",
+        "title": "Review Selected Items with CodeKarmic",
+        "category": "CodeKarmic",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "codekarmic.debugGit",
+        "title": "Debug Git Functionality",
+        "category": "CodeKarmic",
+        "icon": "$(debug)"
+      }
+    ],
     "configuration": {
-      "title": "AI Code Review",
+      "title": "CodeKarmic",
       "properties": {
-        "codesage.modelType": {
-          "type": "string",
-          "default": "DeepSeek R1",
-          "enum": [
-            "DeepSeek R1",
-            "DeepSeek V3"
-          ],
-          "enumDescriptions": [
-            "DeepSeek R1 AI model for code review"
-          ],
-          "markdownDescription": "AI model used for code review."
-        },
-        "codesage.baseURL": {
-          "type": "string",
-          "default": "https://api.deepseek.com/v1",
-          "markdownDescription": "Base URL for the API service. Different URLs may be required depending on the selected AI model."
-        },
-        "codesage.apiKey": {
+        "codekarmic.apiKey": {
           "type": "string",
           "default": "",
-          "markdownDescription": "API key for the selected AI service."
+          "description": "API key for AI service",
+          "scope": "machine"
         },
-        "codesage.language": {
+        "codekarmic.debugMode": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable debug mode"
+        },
+        "codekarmic.modelType": {
           "type": "string",
-          "default": "中文",
-          "enum": [
-            "English",
-            "中文"
+          "default": "gpt-4-turbo",
+          "enum": ["gpt-3.5-turbo", "gpt-4-turbo", "gpt-4"],
+          "description": "AI model to use for code review"
+        },
+        "codekarmic.openaiHost": {
+          "type": "string",
+          "default": "https://api.openai.com",
+          "description": "OpenAI API host"
+        },
+        "codekarmic.maxFileSizeKb": {
+          "type": "number",
+          "default": 100,
+          "description": "Maximum file size in KB for code review"
+        },
+        "codekarmic.excludeFileTypes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "*.png",
+            "*.jpg",
+            "*.jpeg",
+            "*.gif",
+            "*.bmp",
+            "*.ico",
+            "*.svg",
+            "*.pdf",
+            "*.zip",
+            "*.tar",
+            "*.gz",
+            "*.rar",
+            "*.7z",
+            "*.exe",
+            "*.dll",
+            "*.obj",
+            "*.o",
+            "*.a",
+            "*.lib",
+            "*.so",
+            "*.dylib",
+            "*.ncb",
+            "*.sdf",
+            "*.suo",
+            "*.pdb",
+            "*.idb",
+            "*.bin",
+            "*.mp3",
+            "*.mp4",
+            "*.ogg",
+            "*.wav",
+            "*.avi",
+            "*.mov",
+            "*.mpg",
+            "*.mpeg",
+            "*.mkv",
+            "*.webm",
+            "*.class",
+            "*.psd",
+            "*.tga",
+            "*.ttf",
+            "*.fnt",
+            "*.lock",
+            "node_modules/**",
+            ".git/**",
+            "dist/**",
+            "build/**",
+            "out/**",
+            "target/**",
+            "vendor/**",
+            ".vscode/**"
           ],
-          "description": "The language used for UI elements (including buttons), Output messages, and Code Review results."
+          "description": "File types to exclude from code review"
         }
       }
     },
-    "commands": [
-      {
-        "command": "codesage.configureApiKey",
-        "title": "Configure DeepSeek API Key"
-      },
-      {
-        "command": "codesage.startReview",
-        "title": "Start Code Review"
-      },
-      {
-        "command": "codesage.debugGit",
-        "title": "Debug Git Functionality"
-      },
-      {
-        "command": "codesage.refreshCommits",
-        "title": "Refresh Commits",
-        "icon": "$(refresh)"
-      },
-      {
-        "command": "codesage.refreshFiles",
-        "title": "Refresh Files",
-        "icon": "$(refresh)"
-      },
-      {
-        "command": "codesage.filterByDateRange",
-        "title": "Filter by Date Range"
-      },
-      {
-        "command": "codesage.filterByCommitId",
-        "title": "Filter by Commit ID"
-      },
-      {
-        "command": "codesage.generateReport",
-        "title": "Generate Code Review Report",
-        "icon": "$(notebook-render-output)"
-      },
-      {
-        "command": "codesage.reviewCode",
-        "title": "Review Code Changes"
-      },
-      {
-        "command": "codesage.selectModel",
-        "title": "Select AI Model for Code Review"
-      },
-      {
-        "command": "codesage.selectCommit",
-        "title": "Select Commit for Review"
-      },
-      {
-        "command": "codesage.viewFile",
-        "title": "View File Content"
-      }
-    ],
     "viewsContainers": {
       "activitybar": [
         {
           "id": "code-review-explorer",
           "title": "Code Review",
-          "icon": "resources/icon.svg"
+          "icon": "$(code-review)"
         }
       ]
     },
@@ -131,48 +220,63 @@
       "code-review-explorer": [
         {
           "id": "commitExplorer",
-          "name": "Commits"
+          "name": "Commits",
+          "when": "true"
         },
         {
           "id": "fileExplorer",
-          "name": "Changed Files"
+          "name": "Changed Files",
+          "when": "true"
         }
       ]
     },
     "menus": {
       "view/title": [
         {
-          "command": "codesage.refreshCommits",
+          "command": "codekarmic.startReview",
           "when": "view == commitExplorer",
           "group": "navigation"
         },
         {
-          "command": "codesage.refreshFiles",
+          "command": "codekarmic.refreshCommits",
+          "when": "view == commitExplorer",
+          "group": "navigation"
+        },
+        {
+          "command": "codekarmic.filterByDateRange",
+          "when": "view == commitExplorer",
+          "group": "1_filtering"
+        },
+        {
+          "command": "codekarmic.filterByCommitId",
+          "when": "view == commitExplorer",
+          "group": "1_filtering"
+        },
+        {
+          "command": "codekarmic.generateReport",
           "when": "view == fileExplorer",
           "group": "navigation"
         },
         {
-          "command": "codesage.generateReport",
-          "when": "view == commitExplorer",
-          "group": "navigation@1"
-        },
-        {
-          "command": "codesage.filterByDateRange",
-          "when": "view == commitExplorer",
-          "group": "1_filtering"
-        },
-        {
-          "command": "codesage.filterByCommitId",
-          "when": "view == commitExplorer",
-          "group": "1_filtering"
-        },
-        {
-          "command": "codesage.selectModel",
-          "when": "view == commitExplorer",
-          "group": "2_settings"
+          "command": "codekarmic.refreshFiles",
+          "when": "view == fileExplorer",
+          "group": "navigation"
         }
       ],
-      "view/item/context": []
+      "editor/title": [
+        {
+          "command": "codekarmic.togglePane",
+          "group": "navigation",
+          "when": "editorTextFocus"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "codekarmic.reviewSelectedItems",
+          "group": "codekarmic",
+          "when": "explorerResourceIsFolder || resourceExtname"
+        }
+      ]
     }
   },
   "scripts": {
@@ -180,27 +284,27 @@
     "compile": "webpack",
     "watch": "webpack --watch",
     "package": "webpack --mode production --devtool hidden-source-map",
+    "compile-tests": "tsc -p . --outDir out",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "npm run compile-tests && npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
-    "package-extension": "npx vsce package",
-    "test": "jest",
-    "test:watch": "jest --watch"
+    "test": "node ./out/test/runTest.js"
   },
   "devDependencies": {
-    "@types/node": "^16.11.7",
-    "@types/vscode": "^1.63.0",
-    "@typescript-eslint/eslint-plugin": "^5.30.0",
-    "@typescript-eslint/parser": "^5.30.0",
-    "@vscode/vsce": "^3.2.2",
-    "eslint": "^8.18.0",
-    "ts-loader": "^9.3.1",
-    "typescript": "^5.3.3",
-    "webpack": "^5.73.0",
-    "webpack-cli": "^4.10.0"
+    "@types/mocha": "^10.0.3",
+    "@types/node": "16.x",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.13.1",
+    "@typescript-eslint/parser": "^6.13.1",
+    "eslint": "^8.54.0",
+    "glob": "^10.3.10",
+    "mocha": "^10.2.0",
+    "ts-loader": "^9.5.1",
+    "typescript": "^5.3.2",
+    "webpack": "^5.89.0",
+    "webpack-cli": "^5.1.4"
   },
   "dependencies": {
-    "axios": "^1.8.1",
-    "i18next": "^22.5.1",
-    "openai": "^4.85.4",
-    "simple-git": "^3.16.0"
+    "openai": "^4.20.0"
   }
 }

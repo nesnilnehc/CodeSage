@@ -1188,7 +1188,7 @@ export class GitService {
         // 在开发模式下保留控制台输出以便于调试
         if (process.env['NODE_ENV'] === 'development') {
             const timestamp = new Date().toISOString();
-            console.debug(`[CodeSage][${timestamp}] DEBUG: ${message}`, data ? JSON.stringify(data, null, 2) : '');
+            console.debug(`[CodeKarmic][${timestamp}] DEBUG: ${message}`, data ? JSON.stringify(data, null, 2) : '');
         }
     }
 

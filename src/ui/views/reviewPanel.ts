@@ -8,6 +8,7 @@ export class ReviewPanel {
     private _disposables: vscode.Disposable[] = [];
     private _reviewManager: ReviewManager;
     private _filePath: string;
+    private _codiconUri: vscode.Uri | undefined;
 
     private constructor(
         panel: vscode.WebviewPanel,
@@ -18,6 +19,11 @@ export class ReviewPanel {
         this._panel = panel;
         this._reviewManager = reviewManager;
         this._filePath = filePath;
+        
+        // 创建Codicon CSS的URI
+        this._codiconUri = panel.webview.asWebviewUri(
+            vscode.Uri.joinPath(_extensionUri, 'node_modules', '@vscode/codicons', 'dist', 'codicon.css')
+        );
 
         // Set the webview's initial html content
         this._update();
@@ -72,7 +78,8 @@ export class ReviewPanel {
     public static createOrShow(
         extensionUri: vscode.Uri,
         reviewManager: ReviewManager,
-        filePath: string
+        filePath: string,
+        aiResult?: any
     ) {
         const column = vscode.window.activeTextEditor
             ? vscode.window.activeTextEditor.viewColumn
@@ -82,15 +89,21 @@ export class ReviewPanel {
         if (ReviewPanel.currentPanel) {
             ReviewPanel.currentPanel._panel.reveal(column);
             ReviewPanel.currentPanel._filePath = filePath;
+            
+            // 如果有预先生成的AI审查结果，应用它
+            if (aiResult) {
+                ReviewPanel.currentPanel.applyAIResult(aiResult);
+            }
+            
             ReviewPanel.currentPanel._update();
             return;
         }
 
         // Otherwise, create a new panel.
         const panel = vscode.window.createWebviewPanel(
-            'codesage',
+            'codekarmic',
             'Code Review',
-            column || vscode.ViewColumn.One,
+            column || vscode.ViewColumn.Two,
             {
                 // Enable javascript in the webview
                 enableScripts: true,
@@ -103,6 +116,11 @@ export class ReviewPanel {
         );
 
         ReviewPanel.currentPanel = new ReviewPanel(panel, extensionUri, reviewManager, filePath);
+        
+        // 如果有预先生成的AI审查结果，应用它
+        if (aiResult) {
+            ReviewPanel.currentPanel.applyAIResult(aiResult);
+        }
     }
 
     public dispose() {
@@ -119,65 +137,105 @@ export class ReviewPanel {
         }
     }
 
+    public getFilePath(): string {
+        return this._filePath;
+    }
+
     private async _update() {
         this._panel.title = `Review: ${path.basename(this._filePath)}`;
         this._panel.webview.html = await this._getHtmlForWebview();
     }
 
-    private async performAIReview() {
+    public async performAIReview() {
         const selectedCommit = this._reviewManager.getSelectedCommit();
         
-        if (!selectedCommit) {
-            vscode.window.showErrorMessage('No commit selected');
-            return;
-        }
+        // 检查是否是独立文件审查模式
+        const isStandaloneMode = !selectedCommit;
         
         try {
+            // 如果是Git提交模式但未选择提交，则显示错误
+            if (!isStandaloneMode && !selectedCommit) {
+                vscode.window.showErrorMessage('未选择提交');
+                return;
+            }
+            
             // Show progress indicator
             await vscode.window.withProgress(
                 {
                     location: vscode.ProgressLocation.Notification,
-                    title: 'Analyzing code...',
+                    title: '正在分析代码...',
                     cancellable: false
                 },
                 async (progress) => {
                     progress.report({ increment: 0 });
                     
-                    // 移除未使用的fileContent变量
-                    progress.report({ increment: 30, message: 'Processing file content...' });
+                    progress.report({ increment: 30, message: '处理文件内容...' });
                     
-                    // Simulate AI analysis (in a real extension, this would call the DeepSeek API)
-                    await new Promise(resolve => setTimeout(resolve, 2000));
-                    
-                    progress.report({ increment: 30, message: 'Generating suggestions...' });
-                    
-                    // Add some example AI suggestions
-                    await this._reviewManager.addAISuggestion(
-                        this._filePath,
-                        'Consider adding more comprehensive error handling for edge cases.'
-                    );
-                    
-                    await this._reviewManager.addAISuggestion(
-                        this._filePath,
-                        'The function could be optimized for better performance by caching results.'
-                    );
-                    
-                    await this._reviewManager.addAISuggestion(
-                        this._filePath,
-                        'Variable naming could be improved for better code readability.'
-                    );
-                    
-                    progress.report({ increment: 40, message: 'Finalizing review...' });
-                    
-                    // In a real extension, this would be calculated based on actual code analysis
-                    const reviewData = await this._reviewManager.reviewFile(this._filePath);
-                    reviewData.codeQualityScore = 7.5;
+                    // 如果是独立模式，则获取当前文件内容并执行分析
+                    if (isStandaloneMode) {
+                        try {
+                            // 获取当前文件的内容
+                            const documentUri = vscode.Uri.file(this._filePath);
+                            const document = await vscode.workspace.openTextDocument(documentUri);
+                            const content = document.getText();
+                            
+                            progress.report({ increment: 30, message: '执行AI分析...' });
+                            
+                            // 导入并使用AIService分析代码
+                            const { AIService } = await import('../../services/ai/aiService');
+                            const result = await AIService.getInstance().reviewCode({
+                                filePath: this._filePath,
+                                currentContent: content,
+                                previousContent: content, // 对于独立模式，当前内容和以前内容相同
+                                includeDiffAnalysis: false // 不进行差异分析
+                            });
+                            
+                            progress.report({ increment: 20, message: '处理分析结果...' });
+                            
+                            // 应用AI结果
+                            await this.applyAIResult(result);
+                            
+                            progress.report({ increment: 20, message: '更新视图...' });
+                        } catch (error) {
+                            this._reviewManager.getNotificationManager().log(`独立文件审查失败: ${error}`, 'error', true);
+                        }
+                    } else {
+                        // 原有的模拟审查逻辑 (现有的模拟实现)
+                        // Simulate AI analysis
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+                        
+                        progress.report({ increment: 30, message: '生成建议...' });
+                        
+                        // Add some example AI suggestions
+                        await this._reviewManager.addAISuggestion(
+                            this._filePath,
+                            'Consider adding more comprehensive error handling for edge cases.'
+                        );
+                        
+                        await this._reviewManager.addAISuggestion(
+                            this._filePath,
+                            'The function could be optimized for better performance by caching results.'
+                        );
+                        
+                        await this._reviewManager.addAISuggestion(
+                            this._filePath,
+                            'Variable naming could be improved for better code readability.'
+                        );
+                        
+                        progress.report({ increment: 40, message: 'Finalizing review...' });
+                        
+                        // 直接设置质量评分
+                        await this._reviewManager.setCodeQualityScore(this._filePath, 7.5);
+                        
+                        // 确保更新UI
+                        this._update();
+                    }
                 }
             );
             
-            this._reviewManager.getNotificationManager().log('AI code review completed', 'info', true);
+            this._reviewManager.getNotificationManager().log('AI代码审查已完成', 'info', true);
         } catch (error) {
-            this._reviewManager.getNotificationManager().log(`AI review failed: ${error}`, 'error', true);
+            this._reviewManager.getNotificationManager().log(`AI审查失败: ${error}`, 'error', true);
         }
     }
 
@@ -185,13 +243,12 @@ export class ReviewPanel {
         // Get the file content
         const selectedCommit = this._reviewManager.getSelectedCommit();
         
-        if (!selectedCommit) {
-            return `<html><body>No commit selected</body></html>`;
-        }
-        
         // Get the review data for this file
-        const reviewData = await this._reviewManager.reviewFile(this._filePath);
+        const fileReview = await this._reviewManager.reviewFile(this._filePath);
         
+        // 确定是否为独立文件审查模式（没有选定的提交）
+        const isStandaloneMode = !selectedCommit;
+
         // Create HTML content
         return `<!DOCTYPE html>
         <html lang="en">
@@ -199,6 +256,7 @@ export class ReviewPanel {
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>Code Review</title>
+            ${this._codiconUri ? `<link href="${this._codiconUri}" rel="stylesheet" />` : ''}
             <style>
                 body {
                     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
@@ -333,6 +391,18 @@ export class ReviewPanel {
                     background-color: var(--vscode-button-hoverBackground);
                 }
                 
+                /* Codicon 图标样式 */
+                .codicon {
+                    font-size: 16px;
+                    margin-right: 5px;
+                }
+                
+                button .codicon {
+                    display: inline-block;
+                    vertical-align: middle;
+                    line-height: normal;
+                }
+                
                 .comment-form {
                     margin-top: 20px;
                 }
@@ -353,34 +423,49 @@ export class ReviewPanel {
                     display: flex;
                     justify-content: flex-end;
                 }
+                
+                .standalone-mode {
+                    background-color: var(--vscode-badge-background);
+                    color: var(--vscode-badge-foreground);
+                    padding: 2px 6px;
+                    border-radius: 4px;
+                    font-size: 0.8em;
+                    margin-left: 8px;
+                }
             </style>
         </head>
         <body>
             <div class="container">
                 <div class="header">
-                    <h1>Code Review: ${this._filePath}</h1>
-                    <div class="commit-info">
-                        Commit: ${selectedCommit.hash.substring(0, 7)} - ${selectedCommit.message}<br>
-                        Author: ${selectedCommit.author} - ${new Date(selectedCommit.date).toLocaleString()}
-                    </div>
+                    <h1>
+                        代码审查: ${this._filePath}
+                        ${isStandaloneMode ? '<span class="standalone-mode">独立审查模式</span>' : ''}
+                    </h1>
+                    ${isStandaloneMode ? 
+                        '<div class="commit-info">工作区文件直接审查（不依赖Git提交）</div>' : 
+                        `<div class="commit-info">
+                            提交: ${selectedCommit.hash.substring(0, 7)} - ${selectedCommit.message}<br>
+                            作者: ${selectedCommit.author} - ${new Date(selectedCommit.date).toLocaleString()}
+                        </div>`
+                    }
                 </div>
                 
                 <div class="review-section">
                     <div class="review-tabs">
-                        <button class="tab active" data-tab="comments">Comments</button>
-                        <button class="tab" data-tab="ai-suggestions">AI Suggestions</button>
-                        <button class="tab" data-tab="add-comment">Add Comment</button>
+                        <button class="tab active" data-tab="comments">$(comment-discussion) 评论</button>
+                        <button class="tab" data-tab="ai-suggestions">$(lightbulb) AI建议</button>
+                        <button class="tab" data-tab="add-comment">$(edit) 添加评论</button>
                     </div>
                     
                     <div class="tab-content">
                         <div class="tab-panel active" id="comments">
-                            ${reviewData.comments.length === 0 
-                                ? '<p>No comments yet. Add a comment or request an AI review.</p>' 
+                            ${fileReview.comments.length === 0 
+                                ? '<p>还没有评论。添加评论或请求AI审查。</p>' 
                                 : `<ul class="comment-list">
-                                    ${reviewData.comments.map(comment => `
+                                    ${fileReview.comments.map(comment => `
                                         <li class="comment-item">
                                             <div class="comment-header">
-                                                <span>Line ${comment.lineNumber}</span>
+                                                <span>行 ${comment.lineNumber}</span>
                                                 <span>${comment.author} - ${new Date(comment.timestamp).toLocaleString()}</span>
                                             </div>
                                             <div class="comment-content">${comment.content}</div>
@@ -391,17 +476,17 @@ export class ReviewPanel {
                         </div>
                         
                         <div class="tab-panel" id="ai-suggestions">
-                            ${reviewData.aiSuggestions.length === 0 
-                                ? '<p>No AI suggestions yet. Click "Request AI Review" to analyze this file.</p>' 
+                            ${fileReview.aiSuggestions.length === 0 
+                                ? '<p>还没有AI建议。点击"请求AI审查"来分析此文件。</p>' 
                                 : `
                                     <ul class="suggestion-list">
-                                        ${reviewData.aiSuggestions.map(suggestion => `
+                                        ${fileReview.aiSuggestions.map(suggestion => `
                                             <li class="suggestion-item">${suggestion}</li>
                                         `).join('')}
                                     </ul>
                                     
-                                    ${reviewData.codeQualityScore !== undefined 
-                                        ? `<div class="quality-score">Code Quality Score: ${reviewData.codeQualityScore}/10</div>` 
+                                    ${fileReview.codeQualityScore !== undefined 
+                                        ? `<div class="quality-score">代码质量评分: ${fileReview.codeQualityScore}/10</div>` 
                                         : ''
                                     }
                                 `
@@ -410,10 +495,10 @@ export class ReviewPanel {
                         
                         <div class="tab-panel" id="add-comment">
                             <div class="comment-form">
-                                <textarea id="comment-content" placeholder="Enter your comment here..."></textarea>
+                                <textarea id="comment-content" placeholder="在此输入您的评论..."></textarea>
                                 <div class="form-actions">
-                                    <input type="number" id="line-number" placeholder="Line number" min="1" />
-                                    <button id="submit-comment">Add Comment</button>
+                                    <input type="number" id="line-number" placeholder="行号" min="1" />
+                                    <button id="submit-comment">$(check) 添加评论</button>
                                 </div>
                             </div>
                         </div>
@@ -421,8 +506,8 @@ export class ReviewPanel {
                 </div>
                 
                 <div class="actions">
-                    <button id="request-ai-review">Request AI Review</button>
-                    <button id="generate-report">Generate Report</button>
+                    <button id="request-ai-review">$(lightbulb) 请求AI审查</button>
+                    ${!isStandaloneMode ? '<button id="generate-report">$(notebook) 生成报告</button>' : ''}
                 </div>
             </div>
             
@@ -450,12 +535,12 @@ export class ReviewPanel {
                         const lineNumber = parseInt(document.getElementById('line-number').value, 10);
                         
                         if (!content) {
-                            alert('Please enter a comment');
+                            alert('请输入评论内容');
                             return;
                         }
                         
                         if (isNaN(lineNumber) || lineNumber < 1) {
-                            alert('Please enter a valid line number');
+                            alert('请输入有效的行号');
                             return;
                         }
                         
@@ -477,15 +562,59 @@ export class ReviewPanel {
                         });
                     });
                     
-                    // Generate report
-                    document.getElementById('generate-report').addEventListener('click', () => {
-                        vscode.postMessage({
-                            command: 'generateReport'
+                    // Generate report (only in Git commit mode)
+                    const generateReportBtn = document.getElementById('generate-report');
+                    if (generateReportBtn) {
+                        generateReportBtn.addEventListener('click', () => {
+                            vscode.postMessage({
+                                command: 'generateReport'
+                            });
                         });
-                    });
+                    }
                 })();
             </script>
         </body>
         </html>`;
+    }
+
+    private async applyAIResult(aiResult: any) {
+        try {
+            // 在开始处理之前打印审查数据状态（使用变量，避免警告）
+            const fileReview = await this._reviewManager.reviewFile(this._filePath);
+            console.log(`审查数据状态: 评论数=${fileReview.comments.length}, AI建议数=${fileReview.aiSuggestions.length}`);
+            
+            // 添加AI建议
+            if (aiResult.suggestions && aiResult.suggestions.length > 0) {
+                for (const suggestion of aiResult.suggestions) {
+                    await this._reviewManager.addAISuggestion(this._filePath, suggestion);
+                }
+            }
+            
+            // 添加差异分析建议
+            if (aiResult.diffSuggestions && aiResult.diffSuggestions.length > 0) {
+                for (const suggestion of aiResult.diffSuggestions) {
+                    await this._reviewManager.addAISuggestion(this._filePath, `[差异分析] ${suggestion}`);
+                }
+            }
+            
+            // 添加整个文件分析建议
+            if (aiResult.fullFileSuggestions && aiResult.fullFileSuggestions.length > 0) {
+                for (const suggestion of aiResult.fullFileSuggestions) {
+                    await this._reviewManager.addAISuggestion(this._filePath, `[文件分析] ${suggestion}`);
+                }
+            }
+            
+            // 设置代码质量评分
+            if (aiResult.score !== undefined) {
+                await this._reviewManager.setCodeQualityScore(this._filePath, aiResult.score);
+            }
+            
+            // 更新面板内容
+            this._update();
+            
+            this._reviewManager.getNotificationManager().log('AI代码审查已完成', 'info', true);
+        } catch (error) {
+            this._reviewManager.getNotificationManager().log(`AI审查应用失败: ${error}`, 'error', true);
+        }
     }
 }

@@ -228,21 +228,23 @@ export class ReviewManager {
 
     public async reviewFile(filePath: string): Promise<ReviewData> {
         try {
-            if (!this.selectedCommit) {
-                throw new Error('No commit selected');
-            }
+            // 检查是否是直接文件审查（非Git操作）
+            const isDirectFileReview = !this.selectedCommit;
+            const commitId = isDirectFileReview ? 'direct-review' : this.selectedCommit?.hash || 'unknown';
             
             // 检查文件类型是否可以进行代码审查
             if (!isReviewableFile(filePath)) {
                 throw new Error(OUTPUT.REVIEW.FILE_TYPE_NOT_SUPPORTED(filePath));
             }
 
-            const reviewKey = `${this.selectedCommit.hash}:${filePath}`;
+            const reviewKey = isDirectFileReview ? 
+                `direct:${filePath}` : 
+                `${commitId}:${filePath}`;
             
             if (!this.reviews.has(reviewKey)) {
                 // Create a new review for this file
                 this.reviews.set(reviewKey, {
-                    commitId: this.selectedCommit.hash,
+                    commitId: commitId,
                     filePath: filePath,
                     comments: [],
                     aiSuggestions: [],
@@ -265,10 +267,9 @@ export class ReviewManager {
         content: string
     ): Promise<void> {
         try {
-            if (!this.selectedCommit) {
-                throw new Error('No commit selected');
-            }
-
+            // 允许直接文件审查模式，不依赖于选定的提交
+            const isDirectFileReview = !this.selectedCommit;
+            
             const review = await this.reviewFile(filePath);
             const comment: ReviewComment = {
                 filePath,
@@ -291,10 +292,9 @@ export class ReviewManager {
         suggestion: string
     ): Promise<void> {
         try {
-            if (!this.selectedCommit) {
-                throw new Error('No commit selected');
-            }
-
+            // 允许直接文件审查模式，不依赖于选定的提交
+            const isDirectFileReview = !this.selectedCommit;
+            
             const review = await this.reviewFile(filePath);
             review.aiSuggestions.push(suggestion);
         } catch (error) {
@@ -313,10 +313,9 @@ export class ReviewManager {
         score: number
     ): Promise<void> {
         try {
-            if (!this.selectedCommit) {
-                throw new Error('No commit selected');
-            }
-
+            // 允许直接文件审查模式，不依赖于选定的提交
+            const isDirectFileReview = !this.selectedCommit;
+            
             const review = await this.reviewFile(filePath);
             review.codeQualityScore = score;
             this.logInfo(`${OUTPUT.PROCESS.SET_QUALITY_SCORE} ${filePath}: ${score}`);
@@ -384,7 +383,7 @@ export class ReviewManager {
         this.isGeneratingReport = true;
         
         try {
-            console.time('[CodeSage] Total Report Generation');
+            console.time('[CodeKarmic] Total Report Generation');
             if (!this.selectedCommit || !this.selectedCommit.hash) {
                 notificationManager.log(OUTPUT.REPOSITORY.NO_COMMIT, 'error', true);
                 throw new Error('No commit selected or commit hash is missing');
@@ -398,7 +397,7 @@ export class ReviewManager {
             const { AIService } = await import('../ai/aiService');
             const aiService = AIService.getInstance();
             
-            console.time('[CodeSage] Get Commit Files');
+            console.time('[CodeKarmic] Get Commit Files');
             
             // 确保Git服务已初始化
             if (!this.repoPath) {
@@ -436,11 +435,32 @@ export class ReviewManager {
             // 获取要审查的所有文件
             const files = await this.gitService.getCommitFiles(this.selectedCommit.hash);
             const totalFiles = files.length;
-            console.timeEnd('[CodeSage] Get Commit Files');
+            console.timeEnd('[CodeKarmic] Get Commit Files');
             
             if (totalFiles === 0) {
                 notificationManager.log(OUTPUT.FILE.NO_FILES, 'warning', true);
                 return 'No files found in commit';
+            }
+
+            // 创建结果WebView展示
+            let reportWebView: vscode.WebviewPanel | undefined;
+            try {
+                // 创建或显示报告视图
+                reportWebView = vscode.window.createWebviewPanel(
+                    'codeReview',
+                    `代码审核报告: ${shortCommitId}`,
+                    vscode.ViewColumn.Two,
+                    {
+                        enableScripts: true,
+                        retainContextWhenHidden: true
+                    }
+                );
+                
+                // 更新WebView显示进度信息
+                reportWebView.webview.html = this.getReportProgressHtml(0, totalFiles);
+            } catch (error) {
+                console.error('Error creating report view:', error);
+                notificationManager.log(`创建报告视图失败: ${error}`, 'error', true);
             }
             
             // Use progress bar to display review progress
@@ -452,13 +472,13 @@ export class ReviewManager {
                 notificationManager.log(`${OUTPUT.FILE.FILES_TO_REVIEW} ${totalFiles}`, 'info', false);
                 
                 // Process all files in parallel
-                console.time('[CodeSage] Step 1: File Review');
+                console.time('[CodeKarmic] Step 1: File Review');
                 notificationManager.log(`${OUTPUT.REVIEW.REVIEWING_FILES}`, 'info', false);
                 const reviewResults = await this.reviewFilesParallel(files);
-                console.timeEnd('[CodeSage] Step 1: File Review');
+                console.timeEnd('[CodeKarmic] Step 1: File Review');
                 
                 // Process AI review in parallel
-                console.time('[CodeSage] Step 2: AI Analysis');
+                console.time('[CodeKarmic] Step 2: AI Analysis');
                 notificationManager.log(`${OUTPUT.REVIEW.AI_ANALYSIS}`, 'info', false);
                 let processedAIFiles = 0;
                 const aiAnalysisStartTime = new Date();
@@ -470,6 +490,11 @@ export class ReviewManager {
                     currentContent: file.content,
                     previousContent: file.previousContent
                 }));
+                
+                // 如果有WebView，更新进度
+                if (reportWebView) {
+                    reportWebView.webview.html = this.getReportProgressHtml(processedAIFiles, totalFiles);
+                }
                 
                 try {
                     // Use batch processing for AI analysis
@@ -498,6 +523,11 @@ export class ReviewManager {
                             message: OUTPUT.REPORT.AI_ANALYSIS_PROGRESS(processedAIFiles, totalFiles, percentage)
                         });
                         
+                        // 更新WebView进度
+                        if (reportWebView) {
+                            reportWebView.webview.html = this.getReportProgressHtml(processedAIFiles, totalFiles);
+                        }
+                        
                         // Use internationalized strings with file name
                         const fileName = path.basename(filePath);
                         notificationManager.log(`[${OUTPUT.COMMON.FILE_PREFIX}${processedAIFiles}: ${fileName}] ${OUTPUT.REPORT.AI_ANALYSIS_PROGRESS(processedAIFiles, totalFiles, percentage)} - ${OUTPUT.PROCESS.ESTIMATED_TIME_REMAINING}: ${estimatedTimeRemaining.toFixed(1)} ${OUTPUT.COMMON.SECONDS}`, 'info', true);
@@ -518,6 +548,21 @@ export class ReviewManager {
                             }
                         }
                     }
+                    
+                    // 生成最终报告后更新WebView
+                    console.time('[CodeKarmic] Step 3: Report Generation');
+                    notificationManager.log(`生成Markdown报告`, 'info', false);
+                    
+                    // 生成Markdown格式的报告
+                    const mdReport = this.generateMarkdownReport(files, individualResults);
+                    console.timeEnd('[CodeKarmic] Step 3: Report Generation');
+                    
+                    // 更新WebView显示最终报告
+                    if (reportWebView) {
+                        reportWebView.webview.html = this.getReportHtml(mdReport);
+                    }
+                    
+                    return mdReport;
                 } catch (error) {
                     notificationManager.log(`[Error] Batch AI analysis failed: ${error}`, 'error', true);
                     // Fall back to individual processing if batch fails
@@ -583,168 +628,22 @@ export class ReviewManager {
                             }
                         }
                     }
-                }
-                console.timeEnd('[CodeSage] Step 2: AI Analysis');
-                
-                // Generate report
-                console.time('[CodeSage] Step 3: Report Generation');
-                notificationManager.log(OUTPUT.REPORT.REPORT_GENERATE, 'info', true);
-                let reportContent = '';
-                let processedFiles = 0;
-                
-                // 添加报告头部内容和提交信息
-                if (this.selectedCommit) {
-                    reportContent += `# Code Review Report\n\n`;
-                    reportContent += `## Commit Information\n`;
-                    reportContent += `- Commit Hash: ${this.selectedCommit.hash}\n`;
-                    reportContent += `- Author: ${this.selectedCommit.author}\n`;
-                    reportContent += `- Date: ${new Date(this.selectedCommit.date).toLocaleString()}\n`;
-                    reportContent += `- Message: ${this.selectedCommit.message}\n\n`;
                     
-                    // 添加文件统计信息
-                    if (files && files.length > 0) {
-                        let totalInsertions = 0;
-                        let totalDeletions = 0;
-                        let fileTypes = new Set<string>();
-                        
-                        files.forEach(file => {
-                            if (file) {
-                                totalInsertions += file.insertions || 0;
-                                totalDeletions += file.deletions || 0;
-                                
-                                const ext = file.path.split('.').pop()?.toLowerCase();
-                                if (ext) fileTypes.add(ext);
-                            }
-                        });
-                        
-                        reportContent += `## Changes Summary\n`;
-                        reportContent += `- Total Files Changed: ${files.length}\n`;
-                        reportContent += `- Lines Added: ${totalInsertions}\n`;
-                        reportContent += `- Lines Removed: ${totalDeletions}\n`;
-                        reportContent += `- File Types: ${Array.from(fileTypes).join(', ')}\n\n`;
+                    // 生成最终报告后更新WebView
+                    console.time('[CodeKarmic] Step 3: Report Generation');
+                    notificationManager.log(`生成Markdown报告`, 'info', false);
+                    
+                    // 生成Markdown格式的报告
+                    const mdReport = this.generateMarkdownReport(files, individualResults);
+                    console.timeEnd('[CodeKarmic] Step 3: Report Generation');
+                    
+                    // 更新WebView显示最终报告
+                    if (reportWebView) {
+                        reportWebView.webview.html = this.getReportHtml(mdReport);
                     }
                     
-                    reportContent += `## File Analysis\n\n`;
+                    return mdReport;
                 }
-                
-                // Batch update suggestions and scores
-                const updatePromises: Promise<void>[] = [];
-                
-                // 添加调试日志，查看 individualResults 的状态
-                console.log(`[DEBUG] individualResults length: ${individualResults.length}, files length: ${files.length}`);
-                
-                for (let i = 0; i < files.length; i++) {
-                    const file = files[i];
-                    if (!file) continue; // 跳过无效文件
-                    
-                    const review = reviewResults.get(file.path ?? '');
-                    const aiResult = individualResults[i];
-                    
-                    // 添加调试日志
-                    console.log(`[DEBUG] File ${i+1}/${files.length}: ${file.path}`, {
-                        hasFile: !!file,
-                        hasReview: !!review,
-                        hasAiResult: !!aiResult,
-                        aiResultContent: aiResult ? {
-                            hasSuggestions: !!aiResult.suggestions,
-                            suggestionCount: aiResult.suggestions?.length || 0,
-                            hasDiffSuggestions: !!aiResult.diffSuggestions,
-                            diffSuggestionCount: aiResult.diffSuggestions?.length || 0,
-                            hasFullFileSuggestions: !!aiResult.fullFileSuggestions,
-                            fullFileSuggestionCount: aiResult.fullFileSuggestions?.length || 0,
-                            score: aiResult.score
-                        } : 'No AI result'
-                    });
-                    
-                    // Update progress
-                    processedFiles++;
-                    const percentage = (processedFiles / totalFiles) * 100;
-                    progress.report({
-                        increment: 0,
-                        message: OUTPUT.REPORT.REPORT_GENERATION_PROGRESS(processedFiles, totalFiles, percentage)
-                    });
-                    const fileName = path.basename(file.path);
-                    notificationManager.log(`[${OUTPUT.COMMON.FILE_PREFIX}${processedFiles}: ${fileName}] ${OUTPUT.REPORT.REPORT_GENERATION_PROGRESS(processedFiles, totalFiles, percentage)}`, 'info', true);
-                    
-                    // Collect all update operations - 只在 aiResult 存在时执行
-                    if (aiResult) {
-                        if (aiResult.suggestions) {
-                            updatePromises.push(
-                                ...aiResult.suggestions.map((suggestion: string) =>
-                                    this.addAISuggestion(file.path, suggestion)
-                                )
-                            );
-                        }
-                        
-                        if (aiResult.score !== undefined) {
-                            updatePromises.push(
-                                this.setCodeQualityScore(file.path, aiResult.score)
-                            );
-                        }
-                    }
-                    
-                    // Generate report content
-                    reportContent += `\n## File: ${file.path}\n`;
-                    reportContent += `Code Quality Score: ${aiResult?.score || 'N/A'}\n\n`;
-                    
-                    // 如果没有 AI 结果，添加一个说明
-                    if (!aiResult) {
-                        reportContent += '### Note:\n';
-                        reportContent += '- No AI analysis results available for this file.\n\n';
-                    } else {
-                        // Display diff analysis suggestions
-                        if (aiResult.diffSuggestions && aiResult.diffSuggestions.length > 0) {
-                            reportContent += '### Diff Analysis Suggestions:\n';
-                            for (const suggestion of aiResult.diffSuggestions) {
-                                reportContent += `- ${suggestion}\n`;
-                            }
-                        }
-
-                        // Display full file analysis suggestions
-                        if (aiResult.fullFileSuggestions && aiResult.fullFileSuggestions.length > 0) {
-                            reportContent += '\n### Full File Analysis Suggestions:\n';
-                            for (const suggestion of aiResult.fullFileSuggestions) {
-                                reportContent += `- ${suggestion}\n`;
-                            }
-                        }
-
-                        // Display overall suggestions
-                        if (aiResult.suggestions && aiResult.suggestions.length > 0) {
-                            reportContent += '\n### Overall Suggestions:\n';
-                            for (const suggestion of aiResult.suggestions) {
-                                reportContent += `- ${suggestion}\n`;
-                            }
-                        }
-                    }
-                    
-                    if (review && review.comments.length > 0) {
-                        reportContent += '\n### Comments:\n';
-                        for (const comment of review.comments) {
-                            reportContent += `- Line ${comment.lineNumber}: ${comment.content} (by ${comment.author})\n`;
-                        }
-                    }
-                    
-                    reportContent += '\n---\n';
-                }
-                
-                // Process all update operations in parallel
-                notificationManager.log(OUTPUT.REPORT.REVIEW_DATA_SAVED_IN_MEMORY, 'info', true);
-                
-                // Process all update operations in parallel
-                await Promise.all(updatePromises);
-                
-                console.timeEnd('[CodeSage] Step 3: Report Generation');
-                console.timeEnd('[CodeSage] Total Report Generation');
-                const endTime = new Date();
-                const totalTime = (endTime.getTime() - startTime.getTime()) / 1000;
-                notificationManager.log(OUTPUT.REPORT.REPORT_COMPLETED(totalTime), 'info', true);
-                
-                // 修复报告生成完成后的日志
-                if (this.selectedCommit && this.selectedCommit.hash) {
-                    const shortCommitId = this.selectedCommit.hash.substring(0, 8);
-                    notificationManager.log(OUTPUT.REPORT.REPORT_GENERATED_FOR_COMMIT(shortCommitId), 'info', true);
-                }
-                return reportContent;
             });
 
         } catch (error) {
@@ -759,6 +658,193 @@ export class ReviewManager {
             // Delay 5 seconds before hiding status bar
             notificationManager.endSession(5000, false, true);  // Do not clear output, keep output panel visible
         }
+    }
+
+    /**
+     * 获取报告进度HTML
+     */
+    private getReportProgressHtml(current: number, total: number): string {
+        const percentage = Math.round((current / total) * 100);
+        
+        return `<!DOCTYPE html>
+        <html lang="zh-CN">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>代码审核报告生成中</title>
+            <style>
+                body {
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                    padding: 20px;
+                    background-color: var(--vscode-editor-background);
+                    color: var(--vscode-editor-foreground);
+                }
+                .container {
+                    max-width: 800px;
+                    margin: 0 auto;
+                }
+                .progress-container {
+                    margin: 30px 0;
+                }
+                .progress-bar {
+                    height: 20px;
+                    background-color: var(--vscode-progressBar-background);
+                    border-radius: 10px;
+                    width: ${percentage}%;
+                    transition: width 0.3s ease;
+                }
+                .progress-text {
+                    margin-top: 10px;
+                    text-align: center;
+                }
+                h1 {
+                    color: var(--vscode-editor-foreground);
+                }
+                .file-status {
+                    margin-top: 20px;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>代码审核报告生成中</h1>
+                <div class="progress-container">
+                    <div class="progress-bar"></div>
+                    <div class="progress-text">进度: ${current}/${total} 文件 (${percentage}%)</div>
+                </div>
+                <div class="file-status">
+                    <p>当前已处理: <strong>${current}</strong> 个文件</p>
+                    <p>总文件数: <strong>${total}</strong> 个文件</p>
+                    <p>请耐心等待，审核报告正在生成中...</p>
+                </div>
+            </div>
+        </body>
+        </html>`;
+    }
+
+    /**
+     * 获取报告HTML
+     */
+    private getReportHtml(markdownContent: string): string {
+        // 使用marked库转换Markdown到HTML
+        // 这里简化处理，实际可能需要更复杂的Markdown解析
+        const htmlContent = markdownContent
+            .replace(/\n/g, '<br>')
+            .replace(/# (.*)/g, '<h1>$1</h1>')
+            .replace(/## (.*)/g, '<h2>$1</h2>')
+            .replace(/### (.*)/g, '<h3>$1</h3>')
+            .replace(/\*\*(.*)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.*)\*/g, '<em>$1</em>')
+            .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
+        
+        return `<!DOCTYPE html>
+        <html lang="zh-CN">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>代码审核报告</title>
+            <style>
+                body {
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                    padding: 20px;
+                    background-color: var(--vscode-editor-background);
+                    color: var(--vscode-editor-foreground);
+                }
+                .container {
+                    max-width: 800px;
+                    margin: 0 auto;
+                }
+                h1, h2, h3 {
+                    color: var(--vscode-editor-foreground);
+                }
+                pre {
+                    background-color: var(--vscode-editor-inactiveSelectionBackground);
+                    padding: 10px;
+                    border-radius: 5px;
+                    overflow-x: auto;
+                }
+                code {
+                    font-family: 'Courier New', Courier, monospace;
+                }
+                .file-section {
+                    margin-bottom: 30px;
+                    padding-bottom: 20px;
+                    border-bottom: 1px solid var(--vscode-panel-border);
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                ${htmlContent}
+            </div>
+        </body>
+        </html>`;
+    }
+
+    /**
+     * 生成Markdown格式的报告
+     */
+    public generateMarkdownReport(files: CommitFile[], results: (CodeReviewResult | null)[]): string {
+        // 检查参数是否有效
+        if (!this.selectedCommit) {
+            return '# 错误：没有选择提交';
+        }
+        
+        const { hash, message, author, date } = this.selectedCommit;
+        const commitDate = new Date(date).toLocaleString();
+        
+        let report = `# 代码审核报告
+
+## 提交信息
+- 提交 ID: \`${hash.substring(0, 8)}\`
+- 提交信息: ${message}
+- 作者: ${author}
+- 日期: ${commitDate}
+
+## 文件总览
+- 审核的文件总数: ${files.length}
+- 有建议的文件: ${results.filter(r => r && r.suggestions && r.suggestions.length > 0).length}
+
+`;
+
+        // 添加每个文件的审核结果
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            const result = results[i];
+            
+            if (!result) {
+                continue;
+            }
+            
+            const fileName = path.basename(file.path);
+            report += `## 文件: ${file.path}
+
+`;
+
+            if (result.score !== undefined) {
+                report += `- 代码质量评分: ${result.score}/10
+
+`;
+            }
+            
+            if (result.suggestions && result.suggestions.length > 0) {
+                report += `### 建议
+
+`;
+                
+                for (const suggestion of result.suggestions) {
+                    report += `- ${suggestion}\n`;
+                }
+                
+                report += '\n';
+            } else {
+                report += `文件 \`${fileName}\` 没有建议。
+
+`;
+            }
+        }
+        
+        return report;
     }
 
     public getNotificationManager(): NotificationManager {

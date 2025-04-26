@@ -8,12 +8,12 @@ import { AIService } from './services/ai/aiService';
 import { NotificationManager } from './services/notification/notificationManager';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { OUTPUT, UI } from './i18n';
 import { AppConfig } from './config/appConfig';
 import { ModelValidator } from './models/modelValidator';
+import { isReviewableFile } from './utils/fileUtils';
 
 const execAsync = promisify(exec);
 
@@ -60,7 +60,7 @@ export function activate() {
                             }
                         });
                     } else if (selection === openSettings) {
-                        vscode.commands.executeCommand('workbench.action.openSettings', 'codesage.apiKey');
+                        vscode.commands.executeCommand('workbench.action.openSettings', 'codekarmic.apiKey');
                     }
                 });
             }
@@ -79,7 +79,7 @@ export function activate() {
         vscode.window.registerTreeDataProvider('fileExplorer', fileExplorerProvider);
 
         // Register commands
-        vscode.commands.registerCommand('codesage.configureApiKey', async () => {
+        vscode.commands.registerCommand('codekarmic.configureApiKey', async () => {
             const apiKey = await vscode.window.showInputBox({
                 prompt: UI.PLACEHOLDERS.API_KEY,
                 password: true
@@ -95,7 +95,11 @@ export function activate() {
                 }
             }
         });
-        vscode.commands.registerCommand('codesage.startReview', async () => {
+
+        vscode.commands.registerCommand('codekarmic.openSettings', () => {
+            vscode.commands.executeCommand('workbench.action.openSettings', 'codekarmic');
+        });
+        vscode.commands.registerCommand('codekarmic.startReview', async () => {
             try {
                 const workspaceFolders = vscode.workspace.workspaceFolders;
                 if (!workspaceFolders) {
@@ -134,7 +138,7 @@ export function activate() {
             }
         });
         
-        vscode.commands.registerCommand('codesage.reviewCode', async (params: { filePath: string, currentContent: string, previousContent: string }) => {
+        vscode.commands.registerCommand('codekarmic.reviewCode', async (params: { filePath: string, currentContent: string, previousContent: string }) => {
             try {
                 console.log(`Reviewing code for ${params.filePath}`);
                 
@@ -166,7 +170,7 @@ export function activate() {
                             AIService.getInstance().setApiKey(apiKey);
                             NotificationManager.getInstance().log(UI.MESSAGES.API_KEY_SUCCESS, 'info', true);
                             // Retry the review
-                            return await vscode.commands.executeCommand('codesage.reviewCode', params);
+                            return await vscode.commands.executeCommand('codekarmic.reviewCode', params);
                         } else {
                             vscode.window.showErrorMessage(UI.MESSAGES.API_KEY_INVALID);
                         }
@@ -180,7 +184,7 @@ export function activate() {
             }
         });
         
-        vscode.commands.registerCommand('codesage.generateReport', async () => {
+        vscode.commands.registerCommand('codekarmic.generateReport', async () => {
             try {
                 const selectedCommit = reviewManager.getSelectedCommit();
                 if (!selectedCommit || !selectedCommit.hash) {
@@ -239,11 +243,11 @@ export function activate() {
             }
         });
         
-        vscode.commands.registerCommand('codesage.reviewFile', async (filePath: string) => {
+        vscode.commands.registerCommand('codekarmic.reviewFile', async () => {
             try {
-                const extension = vscode.extensions.getExtension('codesage');
+                const extension = vscode.extensions.getExtension('nesnilnehc.codekarmic');
                 if (extension) {
-                    await ReviewPanel.createOrShow(extension.extensionUri, reviewManager, filePath);
+                    await ReviewPanel.createOrShow(extension.extensionUri, reviewManager, '');
                 } else {
                     throw new Error('Extension not found');
                 }
@@ -253,23 +257,42 @@ export function activate() {
             }
         });
         
-        vscode.commands.registerCommand('codesage.filterByDateRange', async () => {
+        vscode.commands.registerCommand('codekarmic.reviewWorkspaceFile', async () => {
+            try {
+                // 获取当前活动的编辑器
+                const editor = vscode.window.activeTextEditor;
+                if (!editor) {
+                    vscode.window.showWarningMessage('没有打开的文件');
+                    return;
+                }
+
+                // 获取文件路径
+                const filePath = editor.document.uri.fsPath;
+                await reviewWorkspaceFile(filePath, reviewManager);
+                
+            } catch (error) {
+                console.error(`工作区文件审查错误: ${error}`);
+                vscode.window.showErrorMessage(`工作区文件审查错误: ${error}`);
+            }
+        });
+        
+        vscode.commands.registerCommand('codekarmic.filterByDateRange', async () => {
             await filterByDateRange(new GitService(), commitExplorerProvider);
         });
         
-        vscode.commands.registerCommand('codesage.filterByCommitId', async () => {
+        vscode.commands.registerCommand('codekarmic.filterByCommitId', async () => {
             await filterByCommitId(commitExplorerProvider);
         });
         
-        vscode.commands.registerCommand('codesage.selectModel', async () => {
+        vscode.commands.registerCommand('codekarmic.selectModel', async () => {
             await selectModel();
         });
         
-        vscode.commands.registerCommand('codesage.debugGit', async () => {
+        vscode.commands.registerCommand('codekarmic.debugGit', async () => {
             await debugGitFunctionality(new GitService());
         });
         
-        vscode.commands.registerCommand('codesage.refreshCommits', async () => {
+        vscode.commands.registerCommand('codekarmic.refreshCommits', async () => {
             try {
                 console.log('Refreshing commits...');
                 commitExplorerProvider.setLoading(true, UI.MESSAGES.REFRESHING_COMMITS);
@@ -300,7 +323,7 @@ export function activate() {
             }
         });
         
-        vscode.commands.registerCommand('codesage.refreshFiles', async () => {
+        vscode.commands.registerCommand('codekarmic.refreshFiles', async () => {
             try {
                 console.log('Refreshing files...');
                 // Refresh file list
@@ -312,7 +335,42 @@ export function activate() {
             }
         });
 
-        vscode.commands.registerCommand('codesage.selectCommit', async (commitHash: string) => {
+        vscode.commands.registerCommand('codekarmic.togglePane', async () => {
+            try {
+                const extension = vscode.extensions.getExtension('nesnilnehc.codekarmic');
+                if (extension) {
+                    // 获取当前活动编辑器
+                    const editor = vscode.window.activeTextEditor;
+                    if (!editor) {
+                        vscode.window.showWarningMessage('没有打开的文件');
+                        return;
+                    }
+
+                    // 获取文件路径
+                    const filePath = editor.document.uri.fsPath;
+                    
+                    // 如果面板已经打开则关闭它
+                    if (ReviewPanel.currentPanel) {
+                        ReviewPanel.currentPanel.dispose();
+                    } else {
+                        // 否则，打开面板分析当前文件
+                        await ReviewPanel.createOrShow(extension.extensionUri, reviewManager, filePath);
+                        
+                        // 在面板创建后自动请求AI分析
+                        if (ReviewPanel.currentPanel) {
+                            await (ReviewPanel.currentPanel as ReviewPanel).performAIReview();
+                        }
+                    }
+                } else {
+                    throw new Error('找不到扩展');
+                }
+            } catch (error) {
+                console.error(`切换AI面板错误: ${error}`);
+                vscode.window.showErrorMessage(`切换AI面板错误: ${error}`);
+            }
+        });
+
+        vscode.commands.registerCommand('codekarmic.selectCommit', async (commitHash: string) => {
             try {
                 console.log(`Selecting commit: ${commitHash}`);
                 
@@ -330,195 +388,130 @@ export function activate() {
             }
         });
 
-        vscode.commands.registerCommand('codesage.viewFile', async (filePath: string) => {
+        vscode.commands.registerCommand('codekarmic.viewFile', async (filePath: string) => {
             try {
-                console.log(`Viewing file: ${filePath}`);
-                const selectedCommit = reviewManager.getSelectedCommit();
-                
-                if (!selectedCommit) {
-                    throw new Error('No commit selected');
+                const extension = vscode.extensions.getExtension('nesnilnehc.codekarmic');
+                if (extension) {
+                    await ReviewPanel.createOrShow(extension.extensionUri, reviewManager, filePath);
+                } else {
+                    throw new Error('Extension not found');
                 }
-                
-                // 获取文件当前和之前的内容 - 使用共享的已初始化gitService实例
-                const files = await gitService.getCommitFiles(selectedCommit.hash);
-                const file = files.find(f => f.path === filePath);
-                
-                if (!file) {
-                    throw new Error(`File not found: ${filePath}`);
-                }
-                
-                // 获取文件差异
-                const diff = await gitService.getFileDiff(selectedCommit.hash, filePath);
-                
-                // 获取文件的blame信息
-                const blameInfo = await gitService.getFileBlameInfo(filePath, selectedCommit.hash);
-                
-                // 格式化状态显示
-                const statusMap = {
-                    'added': '[A] Added',
-                    'modified': '[M] Modified',
-                    'deleted': '[D] Deleted',
-                    'renamed': '[R] Renamed',
-                    'copied': '[C] Copied',
-                    'binary': '[B] Binary'
-                };
-                const statusDisplay = statusMap[file.status] || '❓ Unknown';
-                const changeStats = file.status !== 'binary' ? `(+${file.insertions} -${file.deletions})` : '';
-                
-                // 创建临时文件用于显示差异
-                const createTempFile = async (content: string, suffix: string): Promise<vscode.Uri> => {
-                    const tempDir = path.join(os.tmpdir(), 'codesage-diff');
-                    if (!fs.existsSync(tempDir)) {
-                        fs.mkdirSync(tempDir, { recursive: true });
+            } catch (error) {
+                console.error(`Error opening review panel: ${error}`);
+                vscode.window.showErrorMessage(`Error opening review panel: ${error}`);
+            }
+        });
+
+        vscode.commands.registerCommand('codekarmic.reviewExplorerItem', async (fileUri: vscode.Uri) => {
+            try {
+                if (!fileUri) {
+                    // 如果没有通过参数传递URI，尝试获取当前选中的文件
+                    const activeEditor = vscode.window.activeTextEditor;
+                    if (activeEditor) {
+                        fileUri = activeEditor.document.uri;
+                    } else {
+                        throw new Error('没有选择文件');
                     }
-                    
-                    const tempFilePath = path.join(tempDir, `${path.basename(file.path)}${suffix}`);
-                    fs.writeFileSync(tempFilePath, content);
-                    return vscode.Uri.file(tempFilePath);
-                };
+                }
+
+                // 获取文件路径
+                const filePath = fileUri.fsPath;
                 
-                try {
-                    // 为旧版本和新版本创建临时文件
-                    const oldContent = file.previousContent || '';
-                    const newContent = file.content || '';
-                    
-                    // 创建临时文件
-                    const oldUri = await createTempFile(oldContent, '.previous');
-                    const newUri = await createTempFile(newContent, '.current');
-                    
-                    // 使用VS Code的diff编辑器显示差异
-                    const title = `${file.path} (${statusDisplay} ${changeStats})`;
-                    await vscode.commands.executeCommand('vscode.diff', oldUri, newUri, title);
-                    
-                    // 如果有blame信息，添加状态栏显示功能
-                    if (blameInfo.length > 0) {
-                        // 等待编辑器打开
-                        await new Promise(resolve => setTimeout(resolve, 500));
-                        
-                        // 创建状态栏项
-                        const blameStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
-                        blameStatusBarItem.text = '加载中...';
-                        blameStatusBarItem.show();
-                        
-                        // 创建行尾装饰器类型
-                        const decorationType = vscode.window.createTextEditorDecorationType({
-                            after: {
-                                margin: '0 0 0 1em',
-                                color: '#888888'
-                            },
-                            rangeBehavior: vscode.DecorationRangeBehavior.ClosedClosed
-                        });
-                        
-                        // 获取当前活动的编辑器
-                        const activeEditor = vscode.window.activeTextEditor;
-                        if (activeEditor) {
-                            // 初始化装饰器
-                            const decorations: vscode.DecorationOptions[] = [];
-                            
-                            // 当光标位置变化时更新状态栏和装饰器
-                            const updateBlameInfo = () => {
-                                if (!activeEditor) {
-                                    return;
-                                }
-                                
-                                // 清除所有装饰器
-                                decorations.length = 0;
-                                
-                                // 获取当前光标位置
-                                const position = activeEditor.selection.active;
-                                const lineNumber = position.line + 1;
-                                
-                                // 在blameInfo中查找对应行的信息
-                                const blame = blameInfo.find(b => b.line === lineNumber);
-                                
-                                if (blame) {
-                                    // 更新状态栏
-                                    const messagePreview = blame.message.length > 30 ? 
-                                        blame.message.substring(0, 30) + '...' : 
-                                        blame.message;
-                                    
-                                    blameStatusBarItem.text = `$(git-commit) ${blame.hash.substring(0, 7)} | ${blame.author} | ${blame.time} | ${messagePreview}`;
-                                    blameStatusBarItem.tooltip = `Commit: ${blame.hash}\n作者: ${blame.author}\n时间: ${blame.time}\n消息: ${blame.message}`;
-                                    
-                                    // 添加行尾装饰器
-                                    const line = activeEditor.document.lineAt(position.line);
-                                    const range = new vscode.Range(
-                                        position.line, line.text.length,
-                                        position.line, line.text.length
-                                    );
-                                    
-                                    // 尽可能显示完整的commit message
-                                    // 使用更长的长度显示消息，以便能够看清消息内容
-                                    const messageDisplay = blame.message;
-                                    
-                                    // 将时间格式简化为日期，以节省空间
-                                    const dateOnly = blame.time.split(' ')[0];
-                                    
-                                    // 缩短作者名称如果太长
-                                    const authorDisplay = blame.author.length > 15 ? 
-                                        blame.author.substring(0, 12) + '...' : 
-                                        blame.author;
-                                    
-                                    decorations.push({
-                                        range,
-                                        renderOptions: {
-                                            after: {
-                                                contentText: ` // ${authorDisplay} | ${dateOnly} | ${blame.hash.substring(0, 7)} | ${messageDisplay}`,
-                                            }
-                                        }
-                                    });
-                                    
-                                    // 应用装饰器
-                                    activeEditor.setDecorations(decorationType, decorations);
+                // 检查是文件还是文件夹
+                const fileStats = await vscode.workspace.fs.stat(fileUri);
+                if (fileStats.type === vscode.FileType.Directory) {
+                    // 处理文件夹
+                    await reviewFolder(fileUri, reviewManager);
+                } else {
+                    // 处理单个文件
+                    await reviewWorkspaceFile(filePath, reviewManager);
+                }
+            } catch (error) {
+                console.error(`资源管理器项目审查错误: ${error}`);
+                vscode.window.showErrorMessage(`资源管理器项目审查错误: ${error}`);
+            }
+        });
+
+        vscode.commands.registerCommand('codekarmic.reviewSelectedItems', async (selectedItems: readonly vscode.Uri[] | vscode.Uri) => {
+            try {
+                let itemsToProcess: readonly vscode.Uri[] = [];
+
+                // 处理单个 URI 或 URI 数组的情况
+                if (selectedItems instanceof vscode.Uri) {
+                    itemsToProcess = [selectedItems];
+                } else if (Array.isArray(selectedItems)) {
+                    itemsToProcess = selectedItems;
+                } else {
+                    // 尝试从当前选择获取，以防从命令面板调用
+                    const activeEditor = vscode.window.activeTextEditor;
+                    if (activeEditor) {
+                        itemsToProcess = [activeEditor.document.uri];
+                    } else {
+                        // 检查资源管理器选择
+                        const explorerSelection = vscode.window.visibleTextEditors[0]?.selection;
+                        // 注意：这种方式获取资源管理器选择可能不准确，VS Code API 对此支持有限
+                        // 更可靠的方式是依赖右键菜单上下文传递正确的参数
+                        // 这里仅作为一种尝试性后备
+                        vscode.window.showWarningMessage('无法确定要审查的项目。请在资源管理器中选择文件或文件夹后重试。');
+                        return;
+                    }
+                }
+
+                // 再次检查处理列表是否为空
+                if (!itemsToProcess || itemsToProcess.length === 0) {
+                    vscode.window.showWarningMessage('没有有效的项目可供审查。');
+                    return;
+                }
+
+                // 处理多个选中项
+                await vscode.window.withProgress(
+                    {
+                        location: vscode.ProgressLocation.Notification,
+                        title: '正在处理选中的项目...',
+                        cancellable: true
+                    },
+                    async (progress, token) => {
+                        const totalItems = itemsToProcess.length;
+                        let processedItems = 0;
+
+                        for (const item of itemsToProcess) {
+                            if (token.isCancellationRequested) {
+                                break;
+                            }
+
+                            // 确保 item 是有效的 Uri 对象
+                            if (!(item instanceof vscode.Uri)) {
+                                console.warn('Skipping invalid item:', item);
+                                continue;
+                            }
+
+                            try {
+                                const itemStats = await vscode.workspace.fs.stat(item);
+                                if (itemStats.type === vscode.FileType.Directory) {
+                                    await reviewFolder(item, reviewManager);
                                 } else {
-                                    blameStatusBarItem.text = '无法获取当前行的Git Blame信息';
-                                    activeEditor.setDecorations(decorationType, []);
+                                    await reviewWorkspaceFile(item.fsPath, reviewManager);
                                 }
-                            };
-                            
-                            // 初始更新
-                            updateBlameInfo();
-                            
-                            // 监听光标位置变化
-                            const selectionChangeDisposable = vscode.window.onDidChangeTextEditorSelection(e => {
-                                if (e.textEditor === activeEditor) {
-                                    updateBlameInfo();
-                                }
-                            });
-                            
-                            // 当编辑器关闭时清理资源
-                            const cleanupDisposable = vscode.window.onDidChangeActiveTextEditor(editor => {
-                                if (!editor || editor.document.uri.fsPath !== newUri.fsPath) {
-                                    blameStatusBarItem.dispose();
-                                    decorationType.dispose();
-                                    selectionChangeDisposable.dispose();
-                                    cleanupDisposable.dispose();
-                                }
+                            } catch (statError) {
+                                console.error(`无法获取项目状态 ${item.fsPath}: ${statError}`);
+                                // 可以选择通知用户或跳过此项
+                                NotificationManager.getInstance().log(`跳过项目 ${path.basename(item.fsPath)}，无法获取状态`, 'warning', false);
+                            }
+
+                            processedItems++;
+                            progress.report({ 
+                                increment: (100 / totalItems),
+                                message: `已处理 ${processedItems}/${totalItems} 个项目` 
                             });
                         }
                     }
-                } catch (diffError) {
-                    console.error(`Error showing diff: ${diffError}`);
-                    
-                    // 如果VS Code的diff编辑器失败，回退到markdown预览
-                    try {
-                        const inlineDiff = diff;
-                        const changeContent = `# ${file.path}\n\n## File Status\n${statusDisplay} ${changeStats}\n\n## Git Diff\n\`\`\`diff\n${inlineDiff}\`\`\`\n`;
-                        
-                        const doc = await vscode.workspace.openTextDocument({
-                            content: changeContent,
-                            language: 'markdown'
-                        });
-                        await vscode.window.showTextDocument(doc, { preview: false });
-                    } catch (markdownError) {
-                        vscode.window.showErrorMessage(`Error viewing file: ${markdownError}`);
-                    }
-                }
+                );
+
             } catch (error) {
-                console.error(`Error viewing file: ${error}`);
-                NotificationManager.getInstance().log(`Error viewing file: ${error}`, 'error', true);
+                console.error(`选中项目审查错误: ${error}`);
+                vscode.window.showErrorMessage(`选中项目审查错误: ${error}`);
             }
-        })
+        });
     } catch (error) {
         const errorDetails = error instanceof Error ? error.stack || error.message : String(error);
         vscode.window.showErrorMessage(`激活扩展失败: ${errorDetails}`);
@@ -668,4 +661,259 @@ ${commits.map(commit => `${commit.hash.substring(0, 7)} - ${commit.date} - ${com
 
 export function deactivate() {
     console.log(OUTPUT.EXTENSION.DEACTIVATE);
+}
+
+/**
+ * 审查工作区中的文件（不依赖于Git）
+ */
+async function reviewWorkspaceFile(filePath: string, reviewManager: ReviewManager): Promise<void> {
+    try {
+        // 检查文件类型是否可以进行代码审查
+        if (!isReviewableFile(filePath)) {
+            vscode.window.showWarningMessage(OUTPUT.REVIEW.FILE_TYPE_NOT_SUPPORTED(filePath));
+            return;
+        }
+
+        // 显示进度指示器，并设置为可取消
+        await vscode.window.withProgress(
+            {
+                location: vscode.ProgressLocation.Notification,
+                title: '正在分析代码...',
+                cancellable: true // 设置为可取消
+            },
+            async (progress, token) => {
+                // 添加取消事件监听
+                token.onCancellationRequested(() => {
+                    NotificationManager.getInstance().log('文件审查已被用户取消', 'info', true);
+                    throw new Error('用户取消了操作');
+                });
+                
+                progress.report({ increment: 0 });
+                
+                // 读取文件内容
+                const fileContent = await vscode.workspace.fs.readFile(vscode.Uri.file(filePath));
+                const content = Buffer.from(fileContent).toString('utf8');
+                
+                // 检查是否已取消
+                if (token.isCancellationRequested) {
+                    return;
+                }
+                
+                progress.report({ increment: 30, message: '处理文件内容...' });
+                
+                // 调用AI服务进行文件审查
+                const { AIService } = await import('./services/ai/aiService');
+                const aiPromise = AIService.getInstance().reviewCode({
+                    filePath: filePath,
+                    currentContent: content,
+                    previousContent: content, // 对于工作区文件，当前内容和以前内容相同
+                    includeDiffAnalysis: false // 明确指定不需要分析差异
+                });
+                
+                // 创建一个可以被取消的Promise
+                const timeoutPromise = new Promise((_, reject) => {
+                    const interval = setInterval(() => {
+                        if (token.isCancellationRequested) {
+                            clearInterval(interval);
+                            reject(new Error('用户取消了操作'));
+                        }
+                    }, 100);
+                });
+                
+                // 使用Promise.race来实现可取消的操作
+                const result = await Promise.race([
+                    aiPromise,
+                    timeoutPromise
+                ]);
+                
+                // 检查是否已取消
+                if (token.isCancellationRequested) {
+                    return;
+                }
+                
+                progress.report({ increment: 30, message: '生成建议...' });
+                
+                // 打开审查面板显示结果
+                const extension = vscode.extensions.getExtension('nesnilnehc.codekarmic');
+                if (extension) {
+                    await ReviewPanel.createOrShow(extension.extensionUri, reviewManager, filePath, result);
+                } else {
+                    throw new Error('找不到扩展');
+                }
+                
+                progress.report({ increment: 40, message: '完成审查...' });
+                
+                NotificationManager.getInstance().log(`完成对 ${path.basename(filePath)} 的审查`, 'info', true);
+            }
+        );
+    } catch (error) {
+        // 检查是否是用户取消的错误
+        if (error instanceof Error && error.message === '用户取消了操作') {
+            console.log('文件审查已被用户取消');
+            return; // 不显示错误消息
+        }
+        
+        console.error(`文件审查错误: ${error}`);
+        vscode.window.showErrorMessage(`文件审查错误: ${error}`);
+    }
+}
+
+/**
+ * 审查文件夹中的所有文件
+ */
+async function reviewFolder(folderUri: vscode.Uri, reviewManager: ReviewManager): Promise<void> {
+    try {
+        // 显示进度指示器
+        await vscode.window.withProgress(
+            {
+                location: vscode.ProgressLocation.Notification,
+                title: '正在扫描文件夹...',
+                cancellable: true // 确保可以取消
+            },
+            async (progress, token) => {
+                // 监听取消事件
+                token.onCancellationRequested(() => {
+                    NotificationManager.getInstance().log('文件夹审查已被用户取消', 'info', true);
+                    throw new Error('用户取消了操作');
+                });
+                
+                // 获取所有文件
+                const files = await getAllFiles(folderUri.fsPath);
+                
+                // 检查是否已取消
+                if (token.isCancellationRequested) {
+                    return;
+                }
+                
+                const reviewableFiles = files.filter(file => isReviewableFile(file));
+                
+                if (reviewableFiles.length === 0) {
+                    vscode.window.showInformationMessage(`文件夹 ${path.basename(folderUri.fsPath)} 中没有可审查的文件`);
+                    return;
+                }
+                
+                // 如果文件太多，询问用户是否继续
+                if (reviewableFiles.length > 10) {
+                    const continue_review = '继续审查';
+                    const select_individual = '选择部分文件';
+                    const cancel = '取消';
+                    
+                    const choice = await vscode.window.showWarningMessage(
+                        `文件夹包含 ${reviewableFiles.length} 个可审查的文件，审查可能需要较长时间`,
+                        continue_review, select_individual, cancel
+                    );
+                    
+                    if (choice === cancel) {
+                        return;
+                    }
+                    
+                    // 检查是否已取消
+                    if (token.isCancellationRequested) {
+                        return;
+                    }
+                    
+                    if (choice === select_individual) {
+                        // 让用户选择要审查的文件
+                        const fileItems = reviewableFiles.map(file => ({
+                            label: path.basename(file),
+                            description: path.relative(folderUri.fsPath, file),
+                            file: file
+                        }));
+                        
+                        const selectedFiles = await vscode.window.showQuickPick(fileItems, {
+                            canPickMany: true,
+                            placeHolder: '选择要审查的文件'
+                        });
+                        
+                        if (!selectedFiles || selectedFiles.length === 0) {
+                            return;
+                        }
+                        
+                        // 更新要审查的文件列表
+                        reviewableFiles.length = 0;
+                        selectedFiles.forEach(item => reviewableFiles.push(item.file));
+                    }
+                }
+                
+                // 检查是否已取消
+                if (token.isCancellationRequested) {
+                    return;
+                }
+                
+                // 开始审查文件
+                const totalFiles = reviewableFiles.length;
+                let processedFiles = 0;
+                
+                for (const file of reviewableFiles) {
+                    if (token.isCancellationRequested) {
+                        NotificationManager.getInstance().log(`文件夹审查在处理 ${processedFiles}/${totalFiles} 个文件后被用户取消`, 'info', true);
+                        break;
+                    }
+                    
+                    try {
+                        await reviewWorkspaceFile(file, reviewManager);
+                        processedFiles++;
+                        
+                        progress.report({
+                            increment: 100 / totalFiles,
+                            message: `已审查 ${processedFiles}/${totalFiles} 个文件`
+                        });
+                    } catch (error) {
+                        // 如果是用户取消的错误，停止整个文件夹的审查
+                        if (error instanceof Error && error.message === '用户取消了操作') {
+                            NotificationManager.getInstance().log(`文件夹审查在处理 ${processedFiles}/${totalFiles} 个文件后被用户取消`, 'info', true);
+                            break;
+                        }
+                        
+                        console.error(`审查文件 ${file} 时出错: ${error}`);
+                        // 继续处理其他文件
+                    }
+                }
+                
+                if (processedFiles > 0 && !token.isCancellationRequested) {
+                    NotificationManager.getInstance().log(
+                        `已完成对 ${path.basename(folderUri.fsPath)} 文件夹中 ${processedFiles} 个文件的审查`,
+                        'info',
+                        true
+                    );
+                }
+            }
+        );
+    } catch (error) {
+        // 检查是否是用户取消的错误
+        if (error instanceof Error && error.message === '用户取消了操作') {
+            console.log('文件夹审查已被用户取消');
+            return; // 不显示错误消息
+        }
+        
+        console.error(`文件夹审查错误: ${error}`);
+        vscode.window.showErrorMessage(`文件夹审查错误: ${error}`);
+    }
+}
+
+/**
+ * 递归获取文件夹中的所有文件
+ */
+async function getAllFiles(folderPath: string): Promise<string[]> {
+    const files: string[] = [];
+    
+    async function traverseDirectory(dirPath: string) {
+        const entries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(dirPath));
+        
+        for (const [name, type] of entries) {
+            const fullPath = path.join(dirPath, name);
+            
+            // 忽略 node_modules、.git 等文件夹
+            if (type === vscode.FileType.Directory) {
+                if (name !== 'node_modules' && name !== '.git' && !name.startsWith('.')) {
+                    await traverseDirectory(fullPath);
+                }
+            } else {
+                files.push(fullPath);
+            }
+        }
+    }
+    
+    await traverseDirectory(folderPath);
+    return files;
 }

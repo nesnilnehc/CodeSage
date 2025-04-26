@@ -1,5 +1,5 @@
 /**
- * Logger utility for CodeSage
+ * Logger utility for CodeKarmic
  * 
  * Provides consistent logging functionality throughout the application
  * with support for different log levels and contexts.

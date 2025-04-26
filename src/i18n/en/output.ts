@@ -1,7 +1,7 @@
 export const OUTPUT = {
     EXTENSION: {
-        ACTIVATE: 'Code Review extension is now active',
-        DEACTIVATE: 'Code Review extension is now deactivated'
+        ACTIVATE: 'CodeKarmic extension is now active',
+        DEACTIVATE: 'CodeKarmic extension is now deactivated'
     },
     REVIEW: {
         REVIEW_START: 'Starting code review:',
@@ -190,7 +190,7 @@ export const OUTPUT = {
         API_KEY_VALIDATION_ERROR: 'API key validation error'
     },
     DEBUG: {
-        EXTENSION_ACTIVE: 'Code Review extension is now active',
+        EXTENSION_ACTIVE: 'CodeKarmic extension is now active',
         REVIEWING_CODE: 'Reviewing code for',
         GENERATING_REPORT: 'Extension: generating report for commit',
         SETTING_REPO_PATH: 'Setting repository path:',

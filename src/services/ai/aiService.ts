@@ -8,6 +8,9 @@ import { AIModelFactoryImpl } from '../../models/modelFactory';
 import { OUTPUT, PROMPTS } from '../../i18n';
 import { AppConfig } from '../../config/appConfig';
 import { LargeFileProcessor } from '../../core/compression/largeFileProcessor';
+import { ModelRequestOptions } from '../../models/types';
+import { getFileLanguage } from '../../utils/fileUtils';
+import { CodeAnalysisOptions } from '../../core/review/reviewTypes';
 
 export interface CodeReviewRequest {
     filePath: string;
@@ -17,6 +20,7 @@ export interface CodeReviewRequest {
     language?: string;
     diffContent?: string; // Added for batch processing
     includeDiffAnalysis?: boolean; // 控制是否执行差异分析
+    useStreamingOutput?: boolean;
 }
 
 export interface CodeReviewResult {
@@ -76,24 +80,38 @@ export class AIService {
             const notificationManager = NotificationManager.getInstance();
             notificationManager.log(`${OUTPUT.REVIEW.REVIEW_START} ${params.filePath}`, 'info', true);
 
-            const diffContent = await this.generateDiffContent(params);
+            // 检查是否为直接文件审查（非Git变更）- 显式设置为false表示直接文件审查
+            const isDirectFileReview = params.includeDiffAnalysis === false;
             
-            // Log successful diff generation
-            console.log(OUTPUT.GIT.GETTING_FILE_DIFF(params.filePath, 'current'));
-            notificationManager.log(OUTPUT.GIT.GETTING_FILE_DIFF(params.filePath, 'current'), 'info', false);
+            let diffContent = '';
+            // 默认不进行diff分析，除非明确要求
+            let includeDiffAnalysis = false;
             
-            // 调试输出：显示差异内容
-            if (diffContent) {
-                const diffPreview = diffContent.length > 300 
-                    ? diffContent.substring(0, 300) 
-                    : diffContent;
-                console.log('DEBUG:', OUTPUT.GIT.DIFF_CONTENT_PREVIEW(diffPreview, diffContent.length));
-            } else {
-                console.log('DEBUG:', OUTPUT.GIT.NO_DIFF_CONTENT);
+            if (!isDirectFileReview) {
+                // 只有在需要分析Git差异时才获取差异内容
+                diffContent = await this.generateDiffContent(params);
+                includeDiffAnalysis = true;
+                
+                // Log successful diff generation
+                console.log(OUTPUT.GIT.GETTING_FILE_DIFF(params.filePath, 'current'));
+                notificationManager.log(OUTPUT.GIT.GETTING_FILE_DIFF(params.filePath, 'current'), 'info', false);
+                
+                // 调试输出：显示差异内容
+                if (diffContent) {
+                    const diffPreview = diffContent.length > 300 
+                        ? diffContent.substring(0, 300) 
+                        : diffContent;
+                    console.log('DEBUG:', OUTPUT.GIT.DIFF_CONTENT_PREVIEW(diffPreview, diffContent.length));
+                } else {
+                    console.log('DEBUG:', OUTPUT.GIT.NO_DIFF_CONTENT);
+                }
             }
             
-            // 默认不进行差异分析，除非明确指定
-            const analysisOptions = { includeDiffAnalysis: params.includeDiffAnalysis || false };
+            // 分析代码 - 明确设置includeDiffAnalysis而不使用params中的值
+            const analysisOptions: CodeAnalysisOptions = { 
+                useCompression: !!params.useCompression,
+                includeDiffAnalysis: includeDiffAnalysis 
+            };
             const analysis = await this.performCodeAnalysis(params, diffContent, analysisOptions);
             
             notificationManager.log(`${OUTPUT.REVIEW.REVIEW_COMPLETE} ${params.filePath}`, 'info', true);
@@ -239,99 +257,157 @@ export class AIService {
         return result;
     }
 
-    private async performCodeAnalysis(params: CodeReviewRequest, diffContent: string, options = { includeDiffAnalysis: false }): Promise<CodeReviewResult> {
-        console.time('performCodeAnalysis:total');
+    private async performCodeAnalysis(
+        params: CodeReviewRequest, 
+        diffContent: string, 
+        options: CodeAnalysisOptions
+    ): Promise<CodeReviewResult> {
+        const filePath = params.filePath;
+        const language = getFileLanguage(filePath);
         const notificationManager = NotificationManager.getInstance();
+        
+        // 添加流式输出支持
+        const modelRequestOptions: ModelRequestOptions = {
+            maxTokens: options.maxTokens || 4000,
+            temperature: 0.1,
+            stream: true,  // 启用流式输出
+            timeoutMs: 180000, // 3分钟超时
+        };
+        
+        // 确定是否使用压缩
+        if (params.useCompression) {
+            return await this.performCompressedCodeAnalysis(params);
+        }
+        
+        console.time('performCodeAnalysis:total');
+        const startTime = new Date();
+        
+        console.log(`[${startTime.toISOString()}] 开始代码分析流程，文件: ${path.basename(filePath)}`);
         
         if (!this.modelService) {
             console.timeEnd('performCodeAnalysis:total');
             throw new Error(OUTPUT.REVIEW.AI_SERVICE_NOT_INITIALIZED);
         }
 
-        // 记录文件大小
-        console.log(`文件大小: ${params.currentContent.length} 字符, Diff大小: ${diffContent.length} 字符`);
-        notificationManager.log(`文件大小: ${params.currentContent.length} 字符, Diff大小: ${diffContent.length} 字符`, 'info', false);
+        // 记录文件大小并展示更详细的进度信息
+        const fileSize = params.currentContent.length;
+        const diffSize = options.includeDiffAnalysis ? diffContent.length : 0;
         
-        // Check if compression is required for large files
-        if (params.useCompression || params.currentContent.length > 100000) {
-            console.log('文件过大，使用压缩分析方法');
-            notificationManager.log('文件过大，使用压缩分析方法', 'info', false);
-            console.timeEnd('performCodeAnalysis:total');
-            return this.performCompressedCodeAnalysis(params);
-        }
-
-        // Handle normal code review
-        console.time('createPrompts');
-        // Use the separate diff and full file prompts for more precise analysis
-        const fullFilePrompt = this.createFullFilePrompt(params.filePath, params.currentContent);
-        const diffPrompt = this.createDiffPrompt(params.filePath, diffContent);
-        console.timeEnd('createPrompts');
-        console.log('提示创建完成，提示长度:', fullFilePrompt.length, diffPrompt.length);
-        
-        // Get responses for both prompts
-        console.time('fullFileApiRequest');
-        console.log(OUTPUT.REVIEW.FULL_FILE_ANALYSIS_START);
-        notificationManager.log(OUTPUT.REVIEW.FULL_FILE_ANALYSIS_START, 'info', false);
-        const fullFileResponse = await this.makeSpecificApiRequest(fullFilePrompt, 
-            PROMPTS.CODE_REVIEW_TEMPLATES.SYSTEM_PROMPT);
-        console.timeEnd('fullFileApiRequest');
-        console.log(OUTPUT.REVIEW.FULL_FILE_ANALYSIS_COMPLETE(fullFileResponse.length));
-        
-        // 只有当includeDiffAnalysis为true时才执行差异分析
-        let diffResponse = '';
-        let diffSuggestions: string[] = [];
-        
-        if (options.includeDiffAnalysis && diffContent && diffContent.trim().length > 10) {
-            console.time('diffApiRequest');
-            console.log(OUTPUT.REVIEW.DIFF_ANALYSIS_START);
-            notificationManager.log(OUTPUT.REVIEW.DIFF_ANALYSIS_START, 'info', false);
-            diffResponse = await this.makeSpecificApiRequest(diffPrompt, 
-                PROMPTS.CODE_REVIEW_TEMPLATES.DIFF_SYSTEM_PROMPT);
-            console.timeEnd('diffApiRequest');
-            console.log(OUTPUT.REVIEW.DIFF_ANALYSIS_COMPLETE(diffResponse.length));
-            
-            // 提取差异分析建议
-            diffSuggestions = this.extractSuggestions(diffResponse);
+        if (options.includeDiffAnalysis) {
+            console.log(`[${new Date().toISOString()}] 文件大小: ${fileSize} 字符, Diff大小: ${diffSize} 字符`);
+            notificationManager.log(`文件大小: ${fileSize} 字符, Diff大小: ${diffSize} 字符`, 'info', false);
         } else {
-            console.log('跳过差异分析，因为includeDiffAnalysis设置为false或没有有效的差异内容');
+            console.log(`[${new Date().toISOString()}] 文件大小: ${fileSize} 字符`);
+            notificationManager.log(`文件大小: ${fileSize} 字符`, 'info', false);
         }
         
-        // Extract suggestions from full file response
-        console.time('extractSuggestions');
-        console.log('提取建议中...');
-        const fullFileSuggestions = this.extractSuggestions(fullFileResponse);
-        console.timeEnd('extractSuggestions');
-        console.log('建议提取完成，全文件建议数:', fullFileSuggestions.length, '差异建议数:', diffSuggestions.length);
+        // 显示分析进度
+        notificationManager.log(`(1/5) 准备分析文件...`, 'info', false);
         
-        // Create final review combining both analyses
-        console.time('createFinalPrompt');
-        console.log('创建最终提示中...');
-        const finalPrompt = this.createFinalPrompt(diffSuggestions, fullFileSuggestions);
-        console.timeEnd('createFinalPrompt');
-        console.log('最终提示创建完成，长度:', finalPrompt.length);
+        // 优化点1: 将多个API调用合并为一个
+        // 创建统一的提示词 - 合并全文分析和差异分析到一个请求中
+        const fileType = filePath.split('.').pop() || '';
+        const fileBaseName = path.basename(filePath);
         
-        console.log(OUTPUT.PROCESS.PROC_AI_ANALYSIS(params.filePath));
-        notificationManager.log(OUTPUT.PROCESS.PROC_AI_ANALYSIS(params.filePath), 'info', false);
+        notificationManager.log(`(2/5) 构建分析提示...`, 'info', false);
+        console.log(`[${new Date().toISOString()}] 准备单一综合分析请求...`);
         
-        console.time('finalApiRequest');
-        console.log('开始最终分析请求...');
-        notificationManager.log('开始最终分析请求...', 'info', false);
-        const finalResponse = await this.makeApiRequest(finalPrompt);
-        console.timeEnd('finalApiRequest');
-        console.log('最终分析完成，响应长度:', finalResponse.length);
+        // 构建合并的提示词
+        let combinedPrompt = `分析以下${fileType}文件: ${fileBaseName}\n\n`;
+        combinedPrompt += `文件内容:\n\`\`\`${fileType}\n${params.currentContent}\n\`\`\`\n\n`;
         
-        console.log(OUTPUT.PROCESS.PROC_COMMENT_ADD);
-        notificationManager.log(OUTPUT.PROCESS.PROC_COMMENT_ADD, 'info', false);
+        // 如果需要差异分析，添加差异信息
+        if (options.includeDiffAnalysis && diffContent && diffContent.trim().length > 10) {
+            combinedPrompt += `\n差异内容:\n\`\`\`diff\n${diffContent}\n\`\`\`\n\n`;
+        }
         
-        console.timeEnd('performCodeAnalysis:total');
-        console.log('代码分析完成，总耗时显示在上面');
-        notificationManager.log('代码分析完成', 'info', false);
+        combinedPrompt += `请执行代码审查并提供以下信息:
+1. 代码质量评分 (1-10)
+2. 主要发现和建议
+3. 可能的改进点
+4. 最佳实践应用情况
+5. 潜在的问题或漏洞\n\n`;
+
+        combinedPrompt += `请保持简洁、具体并提供有用的建议。`;
         
-        const result = this.parseAnalysisResponse(finalResponse);
-        result.diffSuggestions = diffSuggestions;
-        result.fullFileSuggestions = fullFileSuggestions;
-        
-        return result;
+        // 请求开始
+        console.time('singleApiRequest');
+        notificationManager.log(`(3/5) 发送AI分析请求，长度: ${combinedPrompt.length}字符...`, 'info', true);
+        console.log(`[${new Date().toISOString()}] 开始发送单一综合分析请求，提示长度: ${combinedPrompt.length}字符`);
+
+        try {
+            // 发送单一分析请求
+            const messages = [
+                {
+                    role: 'system' as 'system',
+                    content: PROMPTS.CODE_REVIEW_TEMPLATES.SYSTEM_PROMPT
+                },
+                { role: 'user' as 'user', content: combinedPrompt }
+            ];
+            
+            // 增加超时处理和压缩选项
+            const response = await this.modelService.createChatCompletion({
+                messages,
+                temperature: 0.1,
+                max_tokens: 8192,
+                compressLargeContent: fileSize > 50000, // 对大文件启用自动压缩
+                compressionThreshold: 50000 // 压缩阈值
+            });
+            
+            console.timeEnd('singleApiRequest');
+            const endTime = new Date();
+            const duration = (endTime.getTime() - startTime.getTime()) / 1000;
+            
+            console.log(`[${endTime.toISOString()}] 综合分析完成，耗时: ${duration.toFixed(2)}秒，响应长度: ${response.content.length}字符`);
+            notificationManager.log(`(4/5) 分析完成，耗时: ${duration.toFixed(2)}秒`, 'info', true);
+            
+            // 提取建议
+            notificationManager.log(`(5/5) 处理分析结果...`, 'info', false);
+            const suggestions = this.extractSuggestions(response.content);
+            console.log(`[${new Date().toISOString()}] 已提取 ${suggestions.length} 条建议`);
+            
+            // 尝试提取评分
+            let score = 0;
+            const scoreMatch = response.content.match(/评分.*?(\d+(?:\.\d+)?)/);
+            if (scoreMatch) {
+                score = parseFloat(scoreMatch[1]);
+                score = Math.min(Math.max(score, 0), 10); // 确保分数在0-10之间
+            }
+            
+            console.timeEnd('performCodeAnalysis:total');
+            
+            return {
+                suggestions,
+                score,
+                diffContent: response.content,
+                // 仍然保留这些字段以保持接口兼容性
+                diffSuggestions: [],
+                fullFileSuggestions: suggestions
+            };
+        } catch (error: any) {
+            console.timeEnd('singleApiRequest');
+            console.timeEnd('performCodeAnalysis:total');
+            
+            // 增强错误处理
+            const errorMessage = error.message || String(error);
+            const errorTime = new Date().toISOString();
+            console.error(`[${errorTime}] 分析请求失败: ${errorMessage}`);
+            
+            // 添加重试逻辑
+            if (errorMessage.includes('timeout') || errorMessage.includes('rate limit')) {
+                notificationManager.log(`分析请求超时或达到速率限制，请稍后再试`, 'warning', true);
+            } else {
+                notificationManager.log(`分析请求失败: ${errorMessage}`, 'error', true);
+            }
+            
+            return {
+                suggestions: [`分析失败 (${errorTime}): ${errorMessage}`],
+                score: 0,
+                diffContent: '',
+                diffSuggestions: [],
+                fullFileSuggestions: []
+            };
+        }
     }
 
     private async performCompressedCodeAnalysis(params: CodeReviewRequest): Promise<CodeReviewResult> {
@@ -389,37 +465,38 @@ export class AIService {
             }
         }
         
-        // Group normal files into batches for full file analysis
+        // Process normal files in batches based on size
         if (normalFiles.length > 0) {
-            const fullFileBatches: CodeReviewRequest[][] = [[]];
+            // Sort files by size (smallest to largest for easier batching)
+            normalFiles.sort((a, b) => a.currentContent.length - b.currentContent.length);
+            
+            // Prepare different types of analyses
+            const fullFileBatches: CodeReviewRequest[][] = [];
+            let currentBatch: CodeReviewRequest[] = [];
             let currentBatchSize = 0;
-            let currentBatchIndex = 0;
             
             // Group files for full file analysis
             for (const request of normalFiles) {
-                // Calculate estimated tokens for the current file
-                const contentLength = request.currentContent ? request.currentContent.length : 0;
-                const estimatedTokens = contentLength * TOKENS_PER_CHAR;
+                const fileSize = request.currentContent.length;
+                const estimatedTokens = fileSize * TOKENS_PER_CHAR;
                 
-                // If adding this file would exceed the token limit, create a new batch
-                if (currentBatchSize + estimatedTokens > MAX_BATCH_TOKENS) {
-                    currentBatchIndex++;
-                    // Initialize the new batch array
-                    fullFileBatches[currentBatchIndex] = [];
-                    currentBatchSize = 0;
-                }
+                // 设置流式输出参数
+                request.useStreamingOutput = true;
                 
-                // Make sure the batch at current index exists
-                if (!fullFileBatches[currentBatchIndex]) {
-                    fullFileBatches[currentBatchIndex] = [];
+                // Check if adding this file would exceed the batch limit
+                if (currentBatchSize + estimatedTokens > MAX_BATCH_TOKENS && currentBatch.length > 0) {
+                    fullFileBatches.push(currentBatch);
+                    currentBatch = [request];
+                    currentBatchSize = estimatedTokens;
+                } else {
+                    currentBatch.push(request);
+                    currentBatchSize += estimatedTokens;
                 }
-                
-                // Now it's safe to push and update the batch size
-                if (fullFileBatches[currentBatchIndex]) {
-                    fullFileBatches[currentBatchIndex].push(request);
-                    // Ensure estimatedTokens is treated as a number
-                    currentBatchSize += (estimatedTokens as number);
-                }
+            }
+            
+            // Add the last batch if not empty
+            if (currentBatch.length > 0) {
+                fullFileBatches.push(currentBatch);
             }
             
             // Process each batch of full file analyses
@@ -436,13 +513,14 @@ export class AIService {
                     combinedFullFilePrompt += `\n--- FILE: ${request.filePath} ---\n${filePrompt}\n\n`;
                 }
                 
-                // Make a single API request for the entire batch
+                // Make a single API request for the entire batch with streaming enabled
                 notificationManager.log(`${OUTPUT.REVIEW.FULL_FILE_ANALYSIS_START} (Batch ${i+1}/${fullFileBatches.length}, ${batchSize} files)`, 'info', false);
                 console.time(`fullFileBatchApiRequest-${i}`);
                 
                 const fullFileResponse = await this.makeSpecificApiRequest(
                     combinedFullFilePrompt, 
-                    PROMPTS.CODE_REVIEW_TEMPLATES.SYSTEM_PROMPT
+                    PROMPTS.CODE_REVIEW_TEMPLATES.SYSTEM_PROMPT,
+                    true // 启用流式输出
                 );
                 
                 console.timeEnd(`fullFileBatchApiRequest-${i}`);
@@ -451,117 +529,22 @@ export class AIService {
                 // Split the response by file markers and extract suggestions for each file
                 const fileResponses = this.splitBatchResponse(fullFileResponse, batch.map(r => r.filePath));
                 
-                // Store the results for each file
-                for (const [filePath, response] of fileResponses) {
-                    const suggestions = this.extractSuggestions(response);
+                // Merge the results
+                for (let j = 0; j < batch.length; j++) {
+                    const request = batch[j];
+                    const filePath = request.filePath;
+                    const fileResponse = fileResponses[j] || '';
                     
-                    // Create a preliminary result (will be merged with diff analysis later)
-                    if (!results.has(filePath)) {
-                        results.set(filePath, {
-                            suggestions: suggestions,
-                            fullFileSuggestions: suggestions
-                        });
-                    } else {
-                        const existingResult = results.get(filePath) ?? { suggestions: [], fullFileSuggestions: [] };
-                        existingResult.fullFileSuggestions = suggestions;
-                        existingResult.suggestions = [...(existingResult.suggestions || []), ...suggestions];
-                        results.set(filePath, existingResult);
-                    }
-                }
-            }
-            
-            // Group files for diff analysis
-            const diffBatches: CodeReviewRequest[][] = [[]];
-            currentBatchSize = 0;
-            currentBatchIndex = 0;
-            
-            // Group files for diff analysis
-            for (const request of normalFiles) {
-                // Generate diff content
-                const diffContent = await this.generateDiffContent(request);
-                // Calculate estimated tokens safely
-                const contentLength = diffContent ? diffContent.length : 0;
-                const estimatedTokens = contentLength * TOKENS_PER_CHAR;
-                
-                // Store the diff content with the request for later use
-                request.diffContent = diffContent;
-                
-                // If adding this file would exceed the token limit, create a new batch
-                if (currentBatchSize + estimatedTokens > MAX_BATCH_TOKENS) {
-                    currentBatchIndex++;
-                    // Initialize the new batch array
-                    diffBatches[currentBatchIndex] = [];
-                    currentBatchSize = 0;
-                }
-                
-                // Make sure the batch at current index exists
-                if (!diffBatches[currentBatchIndex]) {
-                    diffBatches[currentBatchIndex] = [];
-                }
-                
-                // Now it's safe to push and update the batch size
-                if (diffBatches[currentBatchIndex]) {
-                    diffBatches[currentBatchIndex].push(request);
-                    // Ensure estimatedTokens is treated as a number
-                    currentBatchSize += (estimatedTokens as number);
-                }
-            }
-            
-            // Process each batch of diff analyses
-            for (let i = 0; i < diffBatches.length; i++) {
-                const batch = diffBatches[i];
-                if (!batch || batch.length === 0) continue;
-                const batchSize = batch.length;
+                    // Parse the response to extract suggestions
+                    const suggestions = this.extractSuggestions(fileResponse);
+                    const score = this.extractScoreFromAnalysis(fileResponse);
                     
-                // Create a combined prompt for all diffs in this batch
-                let combinedDiffPrompt = "I need you to review multiple file diffs. For each file, provide a separate analysis:\n\n";
-                
-                for (const request of batch) {
-                    if (request.diffContent) {
-                        const diffPrompt = this.createDiffPrompt(request.filePath, request.diffContent);
-                        combinedDiffPrompt += `\n--- FILE: ${request.filePath} ---\n${diffPrompt}\n\n`;
-                    }
-                }
-                
-                // Make a single API request for the entire batch
-                notificationManager.log(`${OUTPUT.REVIEW.DIFF_ANALYSIS_START} (Batch ${i+1}/${diffBatches.length}, ${batchSize} files)`, 'info', false);
-                console.time(`diffBatchApiRequest-${i}`);
-                
-                const diffResponse = await this.makeSpecificApiRequest(
-                    combinedDiffPrompt, 
-                    PROMPTS.CODE_REVIEW_TEMPLATES.DIFF_SYSTEM_PROMPT
-                );
-                
-                console.timeEnd(`diffBatchApiRequest-${i}`);
-                notificationManager.log(`${OUTPUT.REVIEW.DIFF_ANALYSIS_COMPLETE(diffResponse.length)} (Batch ${i+1}/${diffBatches.length})`, 'info', false);
-                
-                // Split the response by file markers and extract suggestions for each file
-                const fileResponses = this.splitBatchResponse(diffResponse, batch.map(r => r.filePath));
-                
-                // Store the results for each file
-                for (const [filePath, response] of fileResponses) {
-                    const suggestions = this.extractSuggestions(response);
-                    
-                    // Merge with full file analysis results
-                    if (!results.has(filePath)) {
-                        results.set(filePath, {
-                            suggestions: suggestions,
-                            diffSuggestions: suggestions
-                        });
-                    } else {
-                        const existingResult = results.get(filePath) ?? { suggestions: [], diffSuggestions: [] };
-                        existingResult.diffSuggestions = suggestions;
-                        
-                        // Combine suggestions from both analyses
-                        const allSuggestions = [
-                            ...(existingResult.fullFileSuggestions || []),
-                            ...suggestions
-                        ];
-                        
-                        // Remove duplicates
-                        existingResult.suggestions = Array.from(new Set(allSuggestions));
-                        results.set(filePath, existingResult);
-                    }
+                    // Create review result
+                    results.set(filePath, {
+                        suggestions,
+                        score,
+                        diffContent: '',
+                    });
                 }
             }
         }
@@ -573,52 +556,78 @@ export class AIService {
      * Split a batch response into individual file responses
      * @param batchResponse The combined response from the AI
      * @param filePaths Array of file paths in the same order as in the request
-     * @returns Map of file paths to their individual responses
+     * @returns Array of file responses in the same order as file paths
      */
-    private splitBatchResponse(batchResponse: string, filePaths: string[]): Map<string, string> {
-        const results = new Map<string, string>();
+    private splitBatchResponse(batchResponse: string, filePaths: string[]): string[] {
+        const result: string[] = [];
         
-        // Create regex patterns to find file sections in the response
-        for (const filePath of filePaths) {
-            const fileName = path.basename(filePath);
+        // 为每个文件路径创建标记模式
+        for (let i = 0; i < filePaths.length; i++) {
+            const filePath = filePaths[i];
+            const fileMarker = `--- FILE: ${filePath} ---`;
             
-            // Try different patterns to locate file-specific content
-            const patterns = [
-                new RegExp(`---\\s*FILE:\\s*${this.escapeRegExp(filePath)}\\s*---([\\s\\S]*?)(?=---\\s*FILE:|$)`, 'i'),
-                new RegExp(`File:\\s*${this.escapeRegExp(filePath)}([\\s\\S]*?)(?=File:|$)`, 'i'),
-                new RegExp(`${this.escapeRegExp(fileName)}([\\s\\S]*?)(?=\\w+\\.\\w+:|$)`, 'i')
-            ];
-            
-            let fileContent = '';
-            
-            // Try each pattern until we find a match
-            for (const pattern of patterns) {
-                const match = batchResponse.match(pattern);
-                if (match && match[1]) {
-                    fileContent = match[1].trim();
-                    break;
+            // 查找当前文件的起始位置
+            const startIdx = batchResponse.indexOf(fileMarker);
+            if (startIdx === -1) {
+                // 如果找不到文件标记，尝试使用更复杂的模式
+                const fileName = path.basename(filePath);
+                
+                // 尝试不同的模式来定位文件特定内容
+                const patterns = [
+                    new RegExp(`---\\s*FILE:\\s*${this.escapeRegExp(filePath)}\\s*---([\\s\\S]*?)(?=---\\s*FILE:|$)`, 'i'),
+                    new RegExp(`File:\\s*${this.escapeRegExp(filePath)}([\\s\\S]*?)(?=File:|$)`, 'i'),
+                    new RegExp(`${this.escapeRegExp(fileName)}([\\s\\S]*?)(?=\\w+\\.\\w+:|$)`, 'i')
+                ];
+                
+                let fileContent = '';
+                
+                // 尝试每个模式，直到找到匹配项
+                for (const pattern of patterns) {
+                    const match = batchResponse.match(pattern);
+                    if (match && match[1]) {
+                        fileContent = match[1].trim();
+                        break;
+                    }
                 }
-            }
-            
-            // If no specific section found, look for any mention of the file
-            if (!fileContent) {
-                // As a fallback, just search for any paragraph mentioning the file
-                const fileNamePattern = new RegExp(`(\\b${this.escapeRegExp(fileName)}\\b[\\s\\S]*?)(?=\\n\\n|$)`, 'gi');
-                const matches = batchResponse.match(fileNamePattern);
-                if (matches && matches.length > 0) {
-                    fileContent = matches.join('\n\n');
+                
+                // 如果找不到特定部分，查找任何提到该文件的内容
+                if (!fileContent) {
+                    // 作为后备，只是搜索提到该文件的任何段落
+                    const fileNamePattern = new RegExp(`(\\b${this.escapeRegExp(fileName)}\\b[\\s\\S]*?)(?=\\n\\n|$)`, 'gi');
+                    const matches = batchResponse.match(fileNamePattern);
+                    if (matches && matches.length > 0) {
+                        fileContent = matches.join('\n\n');
+                    }
                 }
+                
+                // 如果仍然找不到任何内容，分配空响应
+                if (!fileContent) {
+                    fileContent = `No specific analysis found for ${filePath}`;
+                }
+                
+                result.push(fileContent);
+                continue;
             }
             
-            // If we still couldn't find anything, assign an empty response
-            if (!fileContent) {
-                fileContent = `No specific analysis found for ${filePath}`;
+            // 计算内容的起始位置（跳过文件标记）
+            const contentStart = startIdx + fileMarker.length;
+            
+            // 查找下一个文件标记或使用字符串结束
+            let nextFileIdx = -1;
+            if (i < filePaths.length - 1) {
+                const nextFileMarker = `--- FILE: ${filePaths[i + 1]} ---`;
+                nextFileIdx = batchResponse.indexOf(nextFileMarker, contentStart);
             }
             
-            results.set(filePath, fileContent);
+            // 提取当前文件的内容
+            const fileContent = nextFileIdx === -1 ? 
+                batchResponse.substring(contentStart) : 
+                batchResponse.substring(contentStart, nextFileIdx);
+            
+            result.push(fileContent.trim());
         }
         
-        return results;
+        return result;
     }
     
     /**
@@ -637,123 +646,37 @@ export class AIService {
         return PROMPTS.CODE_REVIEW_TEMPLATES.DIFF_PROMPT(filePath, diffContent);
     }
 
-    private createFinalPrompt(diffSuggestions: string[], fullFileSuggestions: string[]): string {
-        return PROMPTS.CODE_REVIEW_TEMPLATES.FINAL_PROMPT(diffSuggestions, fullFileSuggestions);
-    }
-
-    private makeSpecificApiRequest(prompt: string, systemPrompt: string): Promise<string> {
-        if (!this.modelService) {
-            throw new Error(OUTPUT.REVIEW.AI_SERVICE_NOT_INITIALIZED);
-        }
+    /**
+     * 从分析文本中提取评分
+     * @param text 分析文本
+     * @returns 评分（0-10）
+     */
+    private extractScoreFromAnalysis(text: string): number {
+        // 尝试从文本中匹配分数，格式通常是"评分：8/10"或"分数：8"
+        const scorePattern = /(?:评分|分数|评估|Score|Rating|Quality Score)[:：]\s*(\d+(?:\.\d+)?)[\/\s]*(?:10)?/i;
+        const match = text.match(scorePattern);
         
-        const messages = [
-            {
-                role: 'system',
-                content: systemPrompt
-            },
-            { role: 'user', content: prompt }
-        ];
-        
-        return this.modelService.createChatCompletion({
-            messages,
-            temperature: 0.1,
-            max_tokens: 8192
-        }).then(response => response.content);
-    }
-
-    private async makeApiRequest(prompt: string): Promise<any> {
-        if (!this.modelService) {
-            throw new Error(OUTPUT.REVIEW.AI_SERVICE_NOT_INITIALIZED);
-        }
-
-        const messages = [
-            {
-                role: 'system',
-                content: PROMPTS.SYSTEM_ROLE
-            },
-            { role: 'user', content: prompt }
-        ];
-
-        const response = await this.modelService.createChatCompletion({
-            messages,
-            temperature: 0.1,
-            max_tokens: 8192
-        });
-
-        return {
-            choices: [{
-                message: {
-                    content: response.content
-                }
-            }],
-            model: response.model
-        };
-    }
-
-    private parseAnalysisResponse(response: any): CodeReviewResult {
-        const aiResponse = response.choices[0].message.content || '';
-        const suggestions: string[] = [];
-        let score = 0;
-        let fullFileSuggestions: string[] = [];
-        let diffSuggestions: string[] = [];
-
-        // 记录AI响应内容长度，用于调试
-        console.log(`[DEBUG] AI Response content length: ${aiResponse.length}`);
-        console.log(`[DEBUG] AI Response first 100 chars: ${aiResponse.substring(0, 100)}...`);
-
-        // Define patterns for full analysis based on language
-        const fullAnalysisSection = PROMPTS.ANALYSIS_SECTIONS.FULL;
-        const diffAnalysisSection = PROMPTS.ANALYSIS_SECTIONS.DIFF;
-        const suggestionsSection = PROMPTS.ANALYSIS_SECTIONS.SUGGESTIONS;
-        const scoreSection = PROMPTS.ANALYSIS_SECTIONS.SCORE;
-        
-        // 记录使用的节点标记，用于调试
-        console.log(`[DEBUG] Section markers - Full: "${fullAnalysisSection}", Diff: "${diffAnalysisSection}", Suggestions: "${suggestionsSection}", Score: "${scoreSection}"`);
-        
-        // Create regex patterns using the language-specific section headers
-        const fullAnalysisPattern = new RegExp(`${fullAnalysisSection}(.*?)(?=${diffAnalysisSection})`, 's');
-        const fullAnalysisMatch = aiResponse.match(fullAnalysisPattern);
-        if (fullAnalysisMatch) {
-            fullFileSuggestions = this.extractSuggestions(fullAnalysisMatch[1]);
-            console.log(`[DEBUG] Extracted ${fullFileSuggestions.length} full file suggestions`);
-        } else {
-            console.log(`[DEBUG] Failed to match full analysis section with pattern`);
-        }
-
-        // Define patterns for diff analysis based on language
-        const diffAnalysisPattern = new RegExp(`${diffAnalysisSection}(.*?)(?=${suggestionsSection})`, 's');
-        const diffAnalysisMatch = aiResponse.match(diffAnalysisPattern);
-        if (diffAnalysisMatch) {
-            diffSuggestions = this.extractSuggestions(diffAnalysisMatch[1]);
-            console.log(`[DEBUG] Extracted ${diffSuggestions.length} diff suggestions`);
-        } else {
-            console.log(`[DEBUG] Failed to match diff analysis section with pattern`);
-        }
-        
-        // Define patterns for suggestions based on language
-        const suggestionsPattern = new RegExp(`${suggestionsSection}(.*?)(?=${scoreSection})`, 's');
-        const suggestionsMatch = aiResponse.match(suggestionsPattern);
-        if (suggestionsMatch) {
-            suggestions.push(...this.extractSuggestions(suggestionsMatch[1]));
-        }
-
-        // Define patterns for scoring based on language
-        const scorePattern = new RegExp(`${scoreSection}(.*)`, 's');
-        const scoreMatch = aiResponse.match(scorePattern);
-        if (scoreMatch) {
-            const scoreNum = parseFloat(scoreMatch[1].trim());
-            if (!isNaN(scoreNum)) {
-                score = Math.min(Math.max(scoreNum, 0), 10);
+        if (match && match[1]) {
+            const scoreValue = parseFloat(match[1]);
+            if (!isNaN(scoreValue)) {
+                // 确保分数在0-10范围内
+                return Math.min(Math.max(scoreValue, 0), 10);
             }
         }
-
-        return {
-            suggestions,
-            diffSuggestions,
-            fullFileSuggestions,
-            score,
-            diffContent: aiResponse
-        };
+        
+        // 如果找不到明确的分数，尝试从文本中推断
+        if (/优秀|excellent|outstanding|perfect/i.test(text)) {
+            return 9;
+        } else if (/良好|good|well|solid/i.test(text)) {
+            return 7;
+        } else if (/中等|average|moderate|fair/i.test(text)) {
+            return 5;
+        } else if (/差|poor|bad|problematic/i.test(text)) {
+            return 3;
+        }
+        
+        // 默认返回中等分数
+        return 5;
     }
 
     private extractSuggestions(text: string): string[] {
@@ -769,7 +692,7 @@ export class AIService {
         const notificationManager = NotificationManager.getInstance();
         const errorDetails = error instanceof Error ? error.stack || error.message : String(error);
         
-        console.error('[CodeSage] Code review error details:', {
+        console.error('[CodeKarmic] Code review error details:', {
             error: errorDetails,
             filePath,
             modelUsed: this.modelType,
@@ -810,6 +733,55 @@ export class AIService {
 
     public getModel(): string {
         return this.modelType;
+    }
+
+    private makeSpecificApiRequest(prompt: string, systemPrompt: string, useStreaming: boolean = false): Promise<string> {
+        if (!this.modelService) {
+            throw new Error(OUTPUT.REVIEW.AI_SERVICE_NOT_INITIALIZED);
+        }
+        
+        const messages = [
+            {
+                role: 'system' as 'system',
+                content: systemPrompt
+            },
+            { role: 'user' as 'user', content: prompt }
+        ];
+        
+        // 添加请求开始日志
+        const notificationManager = NotificationManager.getInstance();
+        const startTime = new Date();
+        console.log(`[${startTime.toISOString()}] 开始发送AI请求，提示长度: ${prompt.length}字符`);
+        notificationManager.log(`正在发送AI请求，请等待响应...`, 'info', false);
+        
+        // 设置请求参数，添加流式输出支持
+        const requestParams = {
+            messages,
+            temperature: 0.1,
+            max_tokens: 8192,
+            stream: useStreaming // 启用或禁用流式输出
+        };
+        
+        // 如果启用流式输出，显示进度指示
+        if (useStreaming) {
+            notificationManager.updateStatusBar('AI分析中...', '流式响应处理中', 'sync~spin');
+        }
+        
+        return this.modelService.createChatCompletion(requestParams).then(response => {
+            // 计算请求耗时
+            const endTime = new Date();
+            const duration = (endTime.getTime() - startTime.getTime()) / 1000;
+            console.log(`[${endTime.toISOString()}] AI请求完成，耗时: ${duration.toFixed(2)}秒，响应长度: ${response.content.length}字符`);
+            notificationManager.log(`AI请求完成，耗时: ${duration.toFixed(2)}秒`, 'info', false);
+            return response.content;
+        }).catch((error: any) => {
+            // 错误日志
+            const endTime = new Date();
+            const duration = (endTime.getTime() - startTime.getTime()) / 1000;
+            console.error(`[${endTime.toISOString()}] AI请求失败，耗时: ${duration.toFixed(2)}秒，错误: ${error.message}`);
+            notificationManager.log(`AI请求失败，错误: ${error.message}`, 'error', true);
+            throw error;
+        });
     }
 
 }

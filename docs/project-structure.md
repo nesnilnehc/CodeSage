@@ -1,13 +1,13 @@
-# CodeSage 项目结构与命名规范
+# CodeKarmic 项目结构与命名规范
 
 ## 项目概述
 
-CodeSage 是一个 VS Code 扩展，利用 AI 技术（基于 DeepSeek 模型）提供 Git 提交代码审查功能。该扩展支持中文和英文界面，可以分析代码变更并提供高质量的代码审查报告。
+CodeKarmic 是一个 VS Code 扩展，利用 AI 技术（基于 DeepSeek 模型）提供 Git 提交代码审查功能。该扩展支持中文和英文界面，可以分析代码变更并提供高质量的代码审查报告。
 
 ## 目录结构
 
 ```
-CodeSage/
+CodeKarmic/
 ├── .vscode/                  # VS Code 配置文件
 ├── dist/                     # 编译后的分发文件
 ├── docs/                     # 项目文档

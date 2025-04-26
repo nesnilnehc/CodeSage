@@ -3,13 +3,14 @@ import { AbstractAIModelService, AIModelRequestParams, AIModelResponse } from '.
 import { ChatCompletionMessageParam } from 'openai/resources';
 import { withRetry, API_RETRYABLE_ERRORS } from '../../utils/retryUtils';
 import { OUTPUT } from '../../i18n';
+import { ChatMessage, convertToOpenAIMessage } from '../chatTypes';
 
 /**
  * DeepSeek model service implementation
  */
 export class DeepSeekModelService extends AbstractAIModelService {
     private client: OpenAI | undefined;
-    private static readonly TIMEOUT = 60 * 1000; // 60 seconds timeout
+    private static readonly TIMEOUT = 30 * 1000; // 减少为30秒超时，更快速失败
     
     constructor(modelType: string, baseURL: string, apiKey: string | undefined ) {
         super();
@@ -30,7 +31,7 @@ export class DeepSeekModelService extends AbstractAIModelService {
         this.client = new OpenAI({
             baseURL: this.baseURL,
             apiKey: this.apiKey,
-            maxRetries: 0, // We'll handle retries manually
+            maxRetries: 1, // 增加内置重试
             timeout: DeepSeekModelService.TIMEOUT,
             defaultHeaders: {
                 'Content-Type': 'application/json'
@@ -91,25 +92,29 @@ export class DeepSeekModelService extends AbstractAIModelService {
             this.initialize();
         }
 
+        // 添加请求开始日志
+        console.log(`[${new Date().toISOString()}] 发送API请求, 提示长度: ${JSON.stringify(params.messages).length}字符`);
+        
         try {
             const response = await this.retryOperation(async () => {
-                const messages: ChatCompletionMessageParam[] = params.messages.map(msg => ({
-                    role: msg.role as 'user' | 'assistant' | 'system',
-                    content: msg.content
-                }));
+                const messages: ChatCompletionMessageParam[] = params.messages.map(msg => 
+                    convertToOpenAIMessage(msg as ChatMessage)
+                );
                 
                 if (!this.client) {
                     throw new Error('DeepSeek client not initialized');
                 }
                 
-                // 检查是否需要处理大文件内容
-                if (params.compressLargeContent === true && params.messages && params.messages.some(msg => msg.content && msg.content.length > 10000)) {
+                // 优化：仅处理真正大型内容才使用压缩，提高小型文件处理速度
+                const compressionThreshold = params.compressionThreshold || 50000; // 默认50K字符
+                if (params.compressLargeContent === true && params.messages && params.messages.some(msg => msg.content && msg.content.length > compressionThreshold)) {
                     for (let i = 0; i < messages.length; i++) {
                         const msg = messages[i];
                         if (!msg) continue;
                         
                         const content = msg.content;
-                        if (content && typeof content === 'string' && content.length > 10000) {
+                        if (content && typeof content === 'string' && content.length > compressionThreshold) {
+                            console.log(`[${new Date().toISOString()}] 压缩大型内容 (${content.length} 字符)`);
                             messages[i]!.content = this.compressLargeContent(content);
                         }
                     }
@@ -118,10 +123,12 @@ export class DeepSeekModelService extends AbstractAIModelService {
                 return await this.client.chat.completions.create({
                     model: this.modelType || '',
                     messages,
-                    temperature: params.temperature || null,
-                    max_tokens: params.max_tokens || null
+                    temperature: params.temperature || 0.1,
+                    max_tokens: params.max_tokens || 4096
                 });
             });
+            
+            console.log(`[${new Date().toISOString()}] 收到API响应，响应长度: ${response.choices[0].message.content?.length || 0}字符`);
 
             return {
                 content: response.choices[0].message.content || '',
@@ -134,8 +141,8 @@ export class DeepSeekModelService extends AbstractAIModelService {
                 }
             };
         } catch (error) {
-            console.error('DeepSeek API error:', error);
-            throw new Error(`API request failed: ${error instanceof Error ? error.message : String(error)}`);
+            console.error(`[${new Date().toISOString()}] DeepSeek API error:`, error);
+            throw new Error(`API请求失败: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
     

@@ -49,7 +49,7 @@ const CONFIG_DEFAULTS = {
 export class AppConfig {
     private static instance: AppConfig;
     private readonly emitter: EventEmitter;
-    private readonly extension: string = 'codesage';
+    private readonly extension = 'codekarmic';
     
     private constructor() {
         this.emitter = new EventEmitter();

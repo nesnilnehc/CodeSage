@@ -51,7 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Initial release of CodeSage extension
+- Initial release of CodeKarmic extension
 - Core features including:
   - Commit Explorer for browsing and selecting Git commits
   - File Explorer for viewing changed files
@@ -69,7 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Rebranded from "AI Code Review" to "CodeSage":
+- Rebranded from "AI Code Review" to "CodeKarmic":
   - Updated extension name and display information
   - Redesigned icon and visual assets
   - Consistent branding across all components
@@ -79,7 +79,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Optimized bundle size and performance
   - Improved code organization and modularity
 - Configuration updates:
-  - Renamed all command prefixes to 'codesage'
+  - Renamed all command prefixes to 'codekarmic'
   - Streamlined configuration keys
   - Added type definitions for settings
 

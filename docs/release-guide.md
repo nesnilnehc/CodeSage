@@ -1,6 +1,6 @@
-# CodeSage Release Guide
+# CodeKarmic Release Guide
 
-This guide covers the complete release process for CodeSage extension, including both GitHub Release and VS Code Marketplace publication.
+This guide covers the complete release process for CodeKarmic extension, including both GitHub Release and VS Code Marketplace publication.
 
 ## Release Process Overview
 
@@ -87,13 +87,13 @@ npm test
 npm run package-extension
 ```
 
-This creates `codesage-<version>.vsix`
+This creates `codekarmic-<version>.vsix`
 
 #### 2.2 Create GitHub Pre-release
 
 ```bash
-gh release create v0.1.0 codesage-0.1.0.vsix \
-  --title "CodeSage v0.1.0" \
+gh release create v0.1.0 codekarmic-0.1.0.vsix \
+  --title "CodeKarmic v0.1.0" \
   --notes-file CHANGELOG.md \
   --prerelease
 ```
@@ -124,7 +124,7 @@ vsce publish
 #### 3.3 Verify Publication
 
 1. Visit [VS Code Marketplace](https://marketplace.visualstudio.com/)
-2. Search for "CodeSage"
+2. Search for "CodeKarmic"
 3. Verify:
    - Extension details
    - README content

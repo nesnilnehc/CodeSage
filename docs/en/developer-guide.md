@@ -1,4 +1,4 @@
-# CodeSage Developer Guide
+# CodeKarmic Developer Guide
 
 ## Architecture
 

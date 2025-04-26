@@ -1,3 +1,5 @@
+import { ChatMessage } from './chatTypes';
+
 /**
  * AI Model Response Interface
  */
@@ -20,15 +22,13 @@ export interface AIModelResponse {
  * AI model request parameters interface
  */
 export interface AIModelRequestParams {
-    messages: Array<{
-        role: string;
-        content: string;
-    }>;
+    messages: ChatMessage[];
     model?: string;
     temperature?: number;
     max_tokens?: number;
     compressLargeContent?: boolean; // Whether to compress large file content
     compressionThreshold?: number; // File size compression threshold, default is 10000 characters
+    stream?: boolean; // 是否使用流式输出
     [key: string]: any; // Allow other model-specific parameters
 }
 

@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import { BilingualMessage } from '../../i18n/types';
+import { LOG_LEVEL, DEFAULT_LOG_LEVEL, EXTENSION_NAME } from '../../constants/constants';
 
 /**
  * Notification Manager - Manages notifications, status bar, and output panel in VS Code
@@ -11,7 +13,7 @@ export class NotificationManager {
     private debugMode: boolean = false;
 
     private constructor() {
-        this.outputChannel = vscode.window.createOutputChannel('CodeSage');
+        this.outputChannel = vscode.window.createOutputChannel('CodeKarmic');
         this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
         this.debugMode = process.env['NODE_ENV'] === 'development';
     }
@@ -69,56 +71,59 @@ export class NotificationManager {
     }
 
     /**
-     * Log message
-     * @param message Message content
-     * @param level Message level
-     * @param showNotification Whether to show notification
+     * Log a message to the output channel and optionally show a notification.
+     * @param message Message to log
+     * @param level Log level (INFO, WARNING, ERROR)
+     * @param showNotification Whether to show a notification
      */
-    public log(message: string, level: 'info' | 'warning' | 'error' = 'info', showNotification: boolean = false): void {
-        const timestamp = new Date().toISOString();
-        const prefix = level === 'error' ? '❌' : level === 'warning' ? '⚠️' : '✨';
-        const simpleMessage = `[${timestamp}] ${prefix} ${message}`;
+    public log(message: string | BilingualMessage, level: LOG_LEVEL = DEFAULT_LOG_LEVEL, showNotification: boolean = false): void {
+        const timestamp = new Date().toLocaleTimeString();
+        let displayMessage = '';
+        let englishMessage = '';
         
-        // Debug Console: 开发调试信息
-        if (this.debugMode) {
-            console.log(`[CodeSage] ${simpleMessage}`);
+        if (typeof message === 'string') {
+            displayMessage = message;
+            englishMessage = message;
+        } else {
+            // 处理双语消息
+            displayMessage = message.zh;
+            englishMessage = message.en;
         }
+
+        // 构建日志消息，避免重复显示相同内容
+        let logMessage: string;
+        if (typeof message === 'string' || displayMessage === englishMessage) {
+            logMessage = displayMessage;
+        } else {
+            logMessage = `${displayMessage} (${englishMessage})`;
+        }
+
+        this.outputChannel.appendLine(`[${timestamp}] [${level}] ${logMessage}`);
         
-        // 始终输出到输出通道，确保所有日志都被记录
-        this.outputChannel.appendLine(simpleMessage);
+        // 只有在日志级别高于或等于配置的日志级别时才显示通知
+        const configuredLogLevel = vscode.workspace.getConfiguration(EXTENSION_NAME).get<string>('logLevel', DEFAULT_LOG_LEVEL);
         
-        // 根据 showNotification 参数和全局设置决定是否显示通知
-        if (this.showNotifications && (showNotification || level === 'error')) {
-            // 确保 message 是字符串并且处理可能的 undefined
-            const safeMessage = message ?? '';
-            let notificationMessage = safeMessage;
-            
-            // 只有当消息是有效字符串且包含 ']' 时才进行分割
-            if (safeMessage.startsWith('[') && safeMessage.includes('] ')) {
-                const parts = safeMessage.split('] ');
-                if (parts.length > 1) {
-                    notificationMessage = parts[1] || safeMessage;
-                }
-            }
-            
-            switch (level) {
-                case 'info':
-                    vscode.window.showInformationMessage(notificationMessage);
-                    break;
-                case 'warning':
-                    vscode.window.showWarningMessage(notificationMessage);
-                    break;
-                case 'error':
-                    vscode.window.showErrorMessage(notificationMessage);
-                    break;
+        if (LOG_LEVEL[level] >= LOG_LEVEL[configuredLogLevel as keyof typeof LOG_LEVEL] && showNotification) {
+            if (level === 'ERROR') {
+                // 使用错误消息
+                vscode.window.showErrorMessage(displayMessage);
+            } else if (level === 'WARNING') {
+                // 使用警告消息
+                vscode.window.showWarningMessage(displayMessage);
+            } else {
+                // 使用信息消息
+                vscode.window.showInformationMessage(displayMessage);
             }
         }
+
+        // 更新状态栏
+        this.updateStatusBar(displayMessage, level);
     }
 
     public debug(message: string): void {
         if (this.debugMode) {
             const timestamp = new Date().toISOString();
-            console.log(`[CodeSage Debug][${timestamp}] ${message}`);
+            console.log(`[CodeKarmic Debug][${timestamp}] ${message}`);
         }
     }
 

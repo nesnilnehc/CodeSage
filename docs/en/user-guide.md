@@ -1,10 +1,10 @@
-# CodeSage User Guide
+# CodeKarmic User Guide
 
 ## Quick Start
 
-1. Install CodeSage from VS Code Marketplace
+1. Install CodeKarmic from VS Code Marketplace
 2. Open Command Palette (`Ctrl+Shift+P` or `Cmd+Shift+P`)
-3. Run `CodeSage: Configure API Key` to set up your DeepSeek API key
+3. Run `CodeKarmic: Configure API Key` to set up your DeepSeek API key
 4. Open the Code Review sidebar from the activity bar
 5. Select a commit and click "Start Code Review"
 
@@ -18,7 +18,7 @@
 ## Configuration
 
 1. DeepSeek API Key:
-   - Run `CodeSage: Configure API Key` from the command palette
+   - Run `CodeKarmic: Configure API Key` from the command palette
    - Enter your API key when prompted
 
 2. Language Setting:
@@ -30,12 +30,12 @@
 
 ## Available Commands
 
-- `CodeSage: Start Code Review` - Start reviewing selected commit
-- `CodeSage: Configure API Key` - Set up API key
-- `CodeSage: Select AI Model` - Choose AI model for review
-- `CodeSage: Generate Report` - Generate review report
-- `CodeSage: Filter by Date Range` - Filter commits by date
-- `CodeSage: Filter by Commit ID` - Filter specific commits
+- `CodeKarmic: Start Code Review` - Start reviewing selected commit
+- `CodeKarmic: Configure API Key` - Set up API key
+- `CodeKarmic: Select AI Model` - Choose AI model for review
+- `CodeKarmic: Generate Report` - Generate review report
+- `CodeKarmic: Filter by Date Range` - Filter commits by date
+- `CodeKarmic: Filter by Commit ID` - Filter specific commits
 
 ## Review Process
 
@@ -47,7 +47,7 @@
 
 ## Need Help?
 
-- Report issues on [GitHub](https://github.com/nesnilnehc/CodeSage/issues)
+- Report issues on [GitHub](https://github.com/nesnilnehc/CodeKarmic/issues)
 - Check project documentation in the repository
 
 ## Coming Soon

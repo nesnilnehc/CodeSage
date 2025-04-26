@@ -17,9 +17,9 @@ export interface RetryOptions {
  * Default retry options
  */
 export const DEFAULT_RETRY_OPTIONS: RetryOptions = {
-    maxRetries: 3,
-    initialDelay: 1000, // 1 second
-    backoffFactor: 2,   // Exponential backoff
+    maxRetries: 2,       // 减少最大重试次数
+    initialDelay: 500,   // 减少初始延迟到500ms
+    backoffFactor: 1.5,  // 降低退避因子，加速重试
 };
 
 /**
